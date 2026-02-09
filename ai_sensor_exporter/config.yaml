@@ -19,7 +19,8 @@ ports:
 ports_description:
   "8099/tcp": "Web interface and API"
 map:
-  - addon_config:rw
+  - type: addon_config
+    read_only: false
 options:
   refresh_interval: 5
   filter_unavailable: true
