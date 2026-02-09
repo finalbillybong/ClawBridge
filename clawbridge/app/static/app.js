@@ -1,8 +1,9 @@
 /* ═══════════════════════════════════════════════
-   AI Sensor Exporter - Frontend Application
+   ClawBridge - Frontend Application
    ═══════════════════════════════════════════════ */
 
-const BASE_PATH = document.querySelector('link[rel="stylesheet"]').href.replace('/static/style.css', '');
+// Use empty base path — all API calls are relative, ingress proxies them correctly
+const BASE_PATH = '';
 
 // ─── State ─────────────────────────────────────
 let allDomains = {};

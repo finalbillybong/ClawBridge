@@ -1,4 +1,4 @@
-"""Main server for AI Sensor Exporter.
+"""Main server for ClawBridge.
 
 Runs an aiohttp web server with:
 - Authenticated ingress UI at /
@@ -29,28 +29,36 @@ config_mgr = ConfigManager()
 ha_client = HAClient()
 
 
-def get_ingress_path():
-    """Get the ingress path from environment."""
-    return os.environ.get("INGRESS_PATH", "")
-
-
 # ──────────────────────────────────────────────
 # UI Routes (authenticated via ingress)
 # ──────────────────────────────────────────────
 
 async def handle_index(request):
-    """Serve the main setup UI."""
-    ingress_path = get_ingress_path()
+    """Serve the main setup UI with CSS/JS inlined to avoid ingress path issues."""
     static_dir = os.path.join(os.path.dirname(__file__), "static")
+
     with open(os.path.join(static_dir, "index.html"), "r") as f:
         html = f.read()
-    # Inject ingress base path for API calls
-    html = html.replace("{{INGRESS_PATH}}", ingress_path)
+    with open(os.path.join(static_dir, "style.css"), "r") as f:
+        css = f.read()
+    with open(os.path.join(static_dir, "app.js"), "r") as f:
+        js = f.read()
+
+    # Inline CSS and JS to avoid ingress path issues with external files
+    html = html.replace(
+        '<link rel="stylesheet" href="{{INGRESS_PATH}}/static/style.css">',
+        f"<style>{css}</style>"
+    )
+    html = html.replace(
+        '<script src="{{INGRESS_PATH}}/static/app.js"></script>',
+        f"<script>{js}</script>"
+    )
+
     return web.Response(text=html, content_type="text/html")
 
 
 async def handle_static(request):
-    """Serve static files."""
+    """Serve static files (fallback)."""
     filename = request.match_info.get("filename", "")
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     filepath = os.path.join(static_dir, filename)
@@ -189,6 +197,24 @@ async def api_ai_sensors(request):
 
 async def on_startup(app):
     """Start HA client and background refresh on app startup."""
+    # Debug: log all relevant environment variables
+    logger.info("=== Environment Debug ===")
+    token = os.environ.get("SUPERVISOR_TOKEN", "")
+    logger.info("SUPERVISOR_TOKEN present: %s (length: %d)", bool(token), len(token))
+    logger.info("HASSIO_TOKEN present: %s", bool(os.environ.get("HASSIO_TOKEN", "")))
+    logger.info("INGRESS_PORT: %s", os.environ.get("INGRESS_PORT", "not set"))
+    logger.info("INGRESS_PATH: %s", os.environ.get("INGRESS_PATH", "not set"))
+
+    # Log all env vars containing interesting keywords
+    for key, val in sorted(os.environ.items()):
+        key_lower = key.lower()
+        if any(k in key_lower for k in ("supervisor", "hassio", "home", "token", "ingress")):
+            if "token" in key_lower:
+                logger.info("  ENV %s = [%d chars]", key, len(val))
+            else:
+                logger.info("  ENV %s = %s", key, val)
+    logger.info("=========================")
+
     await ha_client.start()
     app["refresh_task"] = asyncio.create_task(
         ha_client.periodic_refresh(config_mgr.refresh_interval)
