@@ -1,6 +1,6 @@
 name: "ClawBridge"
 description: "Bridge your Home Assistant sensors to AI agents via a simple, unauthenticated JSON endpoint."
-version: "1.0.3"
+version: "1.0.4"
 slug: "clawbridge"
 url: "https://github.com/finalbillybong/ClawBridge"
 arch:
@@ -17,8 +17,10 @@ panel_icon: "mdi:bridge"
 panel_title: "ClawBridge"
 ports:
   "8099/tcp": null
+  "8100/tcp": 8100
 ports_description:
-  "8099/tcp": "Web interface and API"
+  "8099/tcp": "Web interface (ingress)"
+  "8100/tcp": "AI sensor endpoint (unauthenticated)"
 map:
   - type: addon_config
     read_only: false

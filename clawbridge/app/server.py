@@ -250,8 +250,8 @@ async def on_cleanup(app):
     logger.info("ClawBridge stopped")
 
 
-def create_app():
-    """Create and configure the aiohttp application."""
+def create_ingress_app():
+    """Create the ingress app (authenticated UI + setup APIs)."""
     app = web.Application()
 
     app.on_startup.append(on_startup)
@@ -273,14 +273,58 @@ def create_app():
     app.router.add_get("/api/config/export", api_export_config)
     app.router.add_post("/api/config/import", api_import_config)
 
-    # AI endpoint (unauthenticated, read-only)
+    # Also serve AI endpoint on ingress for testing
     app.router.add_get("/api/ai-sensors", api_ai_sensors)
 
     return app
 
 
+def create_public_app():
+    """Create the public app (AI endpoint only, no auth required)."""
+    app = web.Application()
+
+    # Only the read-only AI endpoint
+    app.router.add_get("/api/ai-sensors", api_ai_sensors)
+    app.router.add_get("/", api_ai_sensors)  # Also serve at root for convenience
+
+    return app
+
+
+async def start_servers():
+    """Start both the ingress server and the public AI endpoint server."""
+    ingress_port = int(os.environ.get("INGRESS_PORT", 8099))
+    public_port = 8100
+
+    # Create both apps
+    ingress_app = create_ingress_app()
+    public_app = create_public_app()
+
+    # Start ingress server
+    ingress_runner = web.AppRunner(ingress_app)
+    await ingress_runner.setup()
+    ingress_site = web.TCPSite(ingress_runner, "0.0.0.0", ingress_port)
+    await ingress_site.start()
+    logger.info("Ingress server started on port %d", ingress_port)
+
+    # Start public AI endpoint server
+    public_runner = web.AppRunner(public_app)
+    await public_runner.setup()
+    public_site = web.TCPSite(public_runner, "0.0.0.0", public_port)
+    await public_site.start()
+    logger.info("Public AI endpoint started on port %d", public_port)
+    logger.info("AI agents can fetch: http://<your-ha-ip>:%d/api/ai-sensors", public_port)
+
+    # Keep running
+    try:
+        while True:
+            await asyncio.sleep(3600)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        await ingress_runner.cleanup()
+        await public_runner.cleanup()
+
+
 if __name__ == "__main__":
-    port = int(os.environ.get("INGRESS_PORT", 8099))
-    app = create_app()
-    logger.info("Starting server on port %d", port)
-    web.run_app(app, host="0.0.0.0", port=port)
+    logger.info("Starting ClawBridge servers...")
+    asyncio.run(start_servers())
