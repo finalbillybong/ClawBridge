@@ -225,6 +225,22 @@ function renderEntityList() {
   updateFilterStatus(entities.length, selectedInDomain);
 }
 
+// ─── Auto-Save (debounced) ─────────────────────
+
+let autoSaveTimer = null;
+
+function scheduleAutoSave() {
+  if (autoSaveTimer) clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(async () => {
+    try {
+      await apiPost('/api/selection', { entities: Array.from(selectedEntities) });
+      showToast(`Auto-saved! ${selectedEntities.size} entities exposed.`);
+    } catch (err) {
+      console.error('Auto-save failed:', err);
+    }
+  }, 500); // Save 500ms after last change
+}
+
 // ─── Toggle Entity ─────────────────────────────
 
 function toggleEntity(entityId) {
@@ -242,6 +258,7 @@ function toggleEntity(entityId) {
 
   updateExposedCount();
   renderDomainList();
+  scheduleAutoSave();
 }
 
 // ─── Select / Deselect All ─────────────────────
@@ -260,6 +277,7 @@ function selectAllVisible() {
   renderEntityList();
   renderDomainList();
   updateExposedCount();
+  scheduleAutoSave();
 }
 
 function deselectAllVisible() {
@@ -276,6 +294,7 @@ function deselectAllVisible() {
   renderEntityList();
   renderDomainList();
   updateExposedCount();
+  scheduleAutoSave();
 }
 
 // ─── Save Selection ────────────────────────────
