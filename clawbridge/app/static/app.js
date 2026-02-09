@@ -2,8 +2,8 @@
    ClawBridge - Frontend Application
    ═══════════════════════════════════════════════ */
 
-// Use empty base path — all API calls are relative, ingress proxies them correctly
-const BASE_PATH = '';
+// Derive base path from current page URL so API calls go through HA ingress
+const BASE_PATH = window.location.pathname.replace(/\/$/, '');
 
 // ─── State ─────────────────────────────────────
 let allDomains = {};
