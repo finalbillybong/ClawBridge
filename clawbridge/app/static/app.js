@@ -251,7 +251,7 @@ function renderEntityList() {
     const isSelected = selectedEntities.has(entity.entity_id);
     const stateClass = entity.device_class ? entity.device_class : '';
     const domainBadge = (searchTerm || activeDomain === '__exposed__' || activeDomain === '__all__')
-      ? `<span style="color:var(--text-muted); font-size:10px; margin-left:6px; background:var(--bg-primary); padding:1px 6px; border-radius:3px;">${entity.domain}</span>`
+      ? `<span style="color:var(--text-3); font-size:10px; margin-left:6px; background:var(--bg-4); padding:1px 6px; border-radius:3px; font-family:var(--mono);">${entity.domain}</span>`
       : '';
 
     return `
@@ -259,7 +259,7 @@ function renderEntityList() {
            onclick="toggleEntity('${entity.entity_id}')"
            data-entity="${entity.entity_id}">
         <div class="entity-checkbox">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#1a1a2e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="20 6 9 17 4 12"/>
           </svg>
         </div>
@@ -373,8 +373,8 @@ async function saveSelection() {
 
   btn.disabled = false;
   btn.innerHTML = `
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-    Save Configuration`;
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+    Save`;
 }
 
 // ─── Search / Filter ───────────────────────────
