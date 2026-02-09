@@ -9,7 +9,6 @@ arch:
   - armhf
   - armv7
   - i386
-init: false
 homeassistant_api: true
 ingress: true
 ingress_port: 8099

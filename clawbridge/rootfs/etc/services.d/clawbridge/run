@@ -1,0 +1,8 @@
+#!/usr/bin/with-contenv bashio
+# ==============================================================================
+# Start ClawBridge
+# ==============================================================================
+
+bashio::log.info "Starting ClawBridge..."
+
+exec python3 /app/server.py

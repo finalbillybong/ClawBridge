@@ -10,6 +10,5 @@ COPY app /app
 # Install additional Python dependencies
 RUN pip3 install --no-cache-dir --break-system-packages aiohttp[speedups] websockets
 
-WORKDIR /app
-
-CMD ["python3", "/app/server.py"]
+# Copy root filesystem (s6-overlay service definitions)
+COPY rootfs /
