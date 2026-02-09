@@ -1,6 +1,6 @@
-# ClawBridge - AI Sensor Exporter for Home Assistant
+# ClawBridge
 
-A Home Assistant add-on that exposes selected entity states via a simple JSON endpoint for AI agent scraping.
+Bridge your Home Assistant sensors to AI agents via a simple, unauthenticated JSON endpoint.
 
 ## Installation
 
@@ -10,13 +10,13 @@ A Home Assistant add-on that exposes selected entity states via a simple JSON en
    ```
    https://github.com/finalbillybong/ClawBridge
    ```
-4. Find **"AI Sensor Exporter"** in the add-on store and click **Install**
+4. Find **"ClawBridge"** in the add-on store and click **Install**
 5. Start the add-on and open the Web UI
 
 ## What It Does
 
 - Provides a clean UI to browse and select which Home Assistant entities to expose
-- Serves selected entity data as JSON at `/api/ai-sensors` (no authentication required)
+- Bridges selected entity data to AI agents as JSON at `/api/ai-sensors` (no authentication required)
 - Perfect for AI agents, dashboards, or custom integrations that need read-only sensor access
 
 ## AI Endpoint

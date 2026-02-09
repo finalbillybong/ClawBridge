@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClawBridge</title>
+  <link rel="stylesheet" href="{{INGRESS_PATH}}/static/style.css">
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ─── Sidebar ─────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h1>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/>
+          <path d="M16 14h.01"/><path d="M8 14h.01"/>
+          <rect x="3" y="11" width="18" height="10" rx="2"/>
+          <path d="M7 21v2"/><path d="M17 21v2"/>
+        </svg>
+        ClawBridge
+      </h1>
+      <div class="subtitle">Bridge your sensors to AI agents</div>
+    </div>
+
+    <div class="sidebar-stats">
+      <span>Exposed Entities</span>
+      <span class="count" id="exposed-count">0</span>
+    </div>
+
+    <div class="domain-list" id="domain-list">
+      <!-- Domain items populated by JS -->
+    </div>
+
+    <div class="sidebar-footer">
+      <button class="btn btn-success" onclick="saveSelection()" id="save-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        Save Configuration
+      </button>
+    </div>
+  </aside>
+
+  <!-- ─── Main ────────────────────────────────── -->
+  <main class="main">
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <div class="tab active" data-tab="entities" onclick="switchTab('entities')">Entities</div>
+      <div class="tab" data-tab="presets" onclick="switchTab('presets')">Presets</div>
+      <div class="tab" data-tab="settings" onclick="switchTab('settings')">Settings</div>
+    </div>
+
+    <!-- Entities Tab -->
+    <div id="tab-entities">
+      <div class="toolbar">
+        <div class="search-box">
+          <span class="search-icon">&#128269;</span>
+          <input type="text" id="search-input" placeholder="Search entities..." oninput="filterEntities()">
+        </div>
+        <button class="btn" onclick="selectAllVisible()">Select All</button>
+        <button class="btn" onclick="deselectAllVisible()">Deselect All</button>
+      </div>
+      <div class="entity-list" id="entity-list">
+        <div class="loading-overlay" id="loading">
+          <div class="spinner"></div>
+          <span>Loading entities...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Presets Tab -->
+    <div id="tab-presets" style="display:none;">
+      <div class="toolbar">
+        <span style="font-size:13px; color:var(--text-secondary);">Manage saved entity presets</span>
+        <div style="flex:1;"></div>
+        <button class="btn btn-primary" onclick="showSavePresetModal()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Save Current as Preset
+        </button>
+      </div>
+      <div class="preset-list" id="preset-list">
+        <!-- Presets populated by JS -->
+      </div>
+    </div>
+
+    <!-- Settings Tab -->
+    <div id="tab-settings" style="display:none;">
+      <div class="settings-panel" id="settings-panel">
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Refresh Interval</div>
+            <div class="setting-desc">How often to refresh sensor states (1-60 seconds)</div>
+          </div>
+          <input type="number" class="number-input" id="setting-refresh" min="1" max="60" value="5">
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Filter Unavailable</div>
+            <div class="setting-desc">Exclude sensors in "unavailable" or "unknown" state from AI endpoint</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="setting-filter-unavailable" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Compact Mode</div>
+            <div class="setting-desc">Only expose entity_id + state in AI endpoint (saves bandwidth)</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="setting-compact">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">AI Endpoint URL</div>
+            <div class="setting-desc">Share this URL with your AI agents (no authentication required)</div>
+          </div>
+          <code style="color:var(--accent); font-size:12px; background:var(--bg-input); padding:6px 12px; border-radius:var(--radius-sm);" id="endpoint-url">/api/ai-sensors</code>
+        </div>
+        <div style="margin-top:16px; display:flex; gap:8px;">
+          <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+          <button class="btn" onclick="exportConfig()">Export Config</button>
+          <button class="btn" onclick="document.getElementById('import-file').click()">Import Config</button>
+          <input type="file" id="import-file" accept=".json" style="display:none" onchange="importConfig(event)">
+        </div>
+      </div>
+    </div>
+
+    <!-- Status Bar -->
+    <div class="status-bar">
+      <div class="status-left">
+        <span><span class="status-dot" id="status-dot"></span> <span id="status-text">Connecting...</span></span>
+        <span id="status-domain">No domain selected</span>
+      </div>
+      <span id="status-filter"></span>
+    </div>
+  </main>
+</div>
+
+<!-- Preset Modal -->
+<div class="modal-overlay" id="preset-modal">
+  <div class="modal">
+    <h3>Save Preset</h3>
+    <input type="text" id="preset-name-input" placeholder="Preset name (e.g. Weather, Security)">
+    <div class="modal-actions">
+      <button class="btn" onclick="hidePresetModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="savePreset()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script src="{{INGRESS_PATH}}/static/app.js"></script>
+</body>
+</html>
