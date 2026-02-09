@@ -8,11 +8,13 @@ const BASE_PATH = window.location.pathname.replace(/\/$/, '');
 // ─── State ─────────────────────────────────────
 let allDomains = {};
 let selectedEntities = new Set();
-let activeDomain = null;
+let activeDomain = null; // null = no domain, '__exposed__' = exposed view, '__all__' = all entities
 let currentTab = 'entities';
 
 // Domain icons (mdi-style emoji fallbacks)
 const DOMAIN_ICONS = {
+  __exposed__: '⭐',
+  __all__: '🌐',
   sensor: '📊',
   binary_sensor: '🔘',
   light: '💡',
@@ -98,6 +100,16 @@ async function apiDelete(path) {
   return resp.json();
 }
 
+// ─── Helper: get all entities as flat array ────
+
+function getAllEntitiesFlat() {
+  return Object.values(allDomains).flat();
+}
+
+function getExposedEntities() {
+  return getAllEntitiesFlat().filter(e => selectedEntities.has(e.entity_id));
+}
+
 // ─── Load Entities ─────────────────────────────
 
 async function loadEntities() {
@@ -107,19 +119,16 @@ async function loadEntities() {
     selectedEntities = new Set(data.selected || []);
     renderDomainList();
     updateExposedCount();
-    setStatus(true, `${Object.values(allDomains).flat().length} entities loaded`);
+    setStatus(true, `${getAllEntitiesFlat().length} entities loaded`);
 
-    // Auto-select first domain
-    const domains = Object.keys(allDomains).sort();
-    if (domains.length > 0) {
-      selectDomain(domains[0]);
+    // Default to "Exposed" view if there are selected entities, otherwise first domain
+    if (selectedEntities.size > 0) {
+      selectDomain('__exposed__');
     } else {
-      document.getElementById('loading').innerHTML = `
-        <div class="empty-state">
-          <div class="empty-icon">📡</div>
-          <h3>No entities found</h3>
-          <p>Make sure Home Assistant is running and the add-on has API access.</p>
-        </div>`;
+      const domains = Object.keys(allDomains).sort();
+      if (domains.length > 0) {
+        selectDomain(domains[0]);
+      }
     }
   } catch (err) {
     console.error('Failed to load entities:', err);
@@ -138,8 +147,34 @@ async function loadEntities() {
 function renderDomainList() {
   const list = document.getElementById('domain-list');
   const domains = Object.keys(allDomains).sort();
+  const exposedCount = getExposedEntities().length;
+  const totalCount = getAllEntitiesFlat().length;
 
-  list.innerHTML = domains.map(domain => {
+  // Build special items + domain items
+  let html = '';
+
+  // Exposed entities view
+  html += `
+    <div class="domain-item ${activeDomain === '__exposed__' ? 'active' : ''}" 
+         onclick="selectDomain('__exposed__')" data-domain="__exposed__"
+         style="border-bottom: 1px solid var(--border); margin-bottom: 4px; padding-bottom: 12px;">
+      <span class="domain-icon">⭐</span>
+      <span class="domain-name" style="font-weight:600;">Exposed</span>
+      <span class="domain-count" style="background:var(--success-dim); color:var(--success);">${exposedCount}</span>
+    </div>`;
+
+  // All entities view
+  html += `
+    <div class="domain-item ${activeDomain === '__all__' ? 'active' : ''}" 
+         onclick="selectDomain('__all__')" data-domain="__all__"
+         style="border-bottom: 1px solid var(--border); margin-bottom: 4px; padding-bottom: 12px;">
+      <span class="domain-icon">🌐</span>
+      <span class="domain-name" style="font-weight:600;">All</span>
+      <span class="domain-count">${totalCount}</span>
+    </div>`;
+
+  // Per-domain items
+  html += domains.map(domain => {
     const count = allDomains[domain].length;
     const selectedCount = allDomains[domain].filter(e => selectedEntities.has(e.entity_id)).length;
     const icon = DOMAIN_ICONS[domain] || '📦';
@@ -152,6 +187,8 @@ function renderDomainList() {
         <span class="domain-count">${selectedCount ? selectedCount + '/' : ''}${count}</span>
       </div>`;
   }).join('');
+
+  list.innerHTML = html;
 }
 
 // ─── Select Domain ─────────────────────────────
@@ -164,33 +201,47 @@ function selectDomain(domain) {
     el.classList.toggle('active', el.dataset.domain === domain);
   });
 
-  document.getElementById('status-domain').textContent = `${DOMAIN_ICONS[domain] || '📦'} ${domain}`;
+  const icon = DOMAIN_ICONS[domain] || '📦';
+  const label = domain === '__exposed__' ? 'Exposed Entities' : domain === '__all__' ? 'All Entities' : domain;
+  document.getElementById('status-domain').textContent = `${icon} ${label}`;
   renderEntityList();
 }
 
 // ─── Render Entity List ────────────────────────
 
 function renderEntityList() {
-  if (!activeDomain || !allDomains[activeDomain]) return;
-
   const list = document.getElementById('entity-list');
   const searchTerm = document.getElementById('search-input').value.toLowerCase();
-  let entities = allDomains[activeDomain];
 
-  // Filter by search
+  let entities;
+
   if (searchTerm) {
-    entities = entities.filter(e =>
+    // When searching, always search across ALL domains
+    entities = getAllEntitiesFlat().filter(e =>
       e.friendly_name.toLowerCase().includes(searchTerm) ||
       e.entity_id.toLowerCase().includes(searchTerm)
     );
+  } else if (activeDomain === '__exposed__') {
+    entities = getExposedEntities();
+  } else if (activeDomain === '__all__') {
+    entities = getAllEntitiesFlat();
+  } else if (activeDomain && allDomains[activeDomain]) {
+    entities = allDomains[activeDomain];
+  } else {
+    entities = [];
   }
 
   if (entities.length === 0) {
+    const emptyMsg = searchTerm
+      ? 'No matching entities found across any domain.'
+      : activeDomain === '__exposed__'
+        ? 'No entities exposed yet. Select a domain and check some entities.'
+        : 'No entities in this domain.';
     list.innerHTML = `
       <div class="empty-state">
-        <div class="empty-icon">🔍</div>
-        <h3>No matching entities</h3>
-        <p>Try a different search term or select another domain.</p>
+        <div class="empty-icon">${searchTerm ? '🔍' : '📡'}</div>
+        <h3>${searchTerm ? 'No search results' : 'No entities'}</h3>
+        <p>${emptyMsg}</p>
       </div>`;
     updateFilterStatus(0, 0);
     return;
@@ -199,6 +250,9 @@ function renderEntityList() {
   list.innerHTML = entities.map(entity => {
     const isSelected = selectedEntities.has(entity.entity_id);
     const stateClass = entity.device_class ? entity.device_class : '';
+    const domainBadge = (searchTerm || activeDomain === '__exposed__' || activeDomain === '__all__')
+      ? `<span style="color:var(--text-muted); font-size:10px; margin-left:6px; background:var(--bg-primary); padding:1px 6px; border-radius:3px;">${entity.domain}</span>`
+      : '';
 
     return `
       <div class="entity-card ${isSelected ? 'selected' : ''}"
@@ -210,7 +264,7 @@ function renderEntityList() {
           </svg>
         </div>
         <div class="entity-info">
-          <div class="entity-name">${escapeHtml(entity.friendly_name)}</div>
+          <div class="entity-name">${escapeHtml(entity.friendly_name)}${domainBadge}</div>
           <div class="entity-id">${entity.entity_id}</div>
         </div>
         <div class="entity-state">
@@ -221,8 +275,8 @@ function renderEntityList() {
       </div>`;
   }).join('');
 
-  const selectedInDomain = entities.filter(e => selectedEntities.has(e.entity_id)).length;
-  updateFilterStatus(entities.length, selectedInDomain);
+  const selectedInView = entities.filter(e => selectedEntities.has(e.entity_id)).length;
+  updateFilterStatus(entities.length, selectedInView);
 }
 
 // ─── Auto-Save (debounced) ─────────────────────
@@ -238,7 +292,7 @@ function scheduleAutoSave() {
     } catch (err) {
       console.error('Auto-save failed:', err);
     }
-  }, 500); // Save 500ms after last change
+  }, 500);
 }
 
 // ─── Toggle Entity ─────────────────────────────
@@ -264,15 +318,7 @@ function toggleEntity(entityId) {
 // ─── Select / Deselect All ─────────────────────
 
 function selectAllVisible() {
-  if (!activeDomain) return;
-  const searchTerm = document.getElementById('search-input').value.toLowerCase();
-  let entities = allDomains[activeDomain];
-  if (searchTerm) {
-    entities = entities.filter(e =>
-      e.friendly_name.toLowerCase().includes(searchTerm) ||
-      e.entity_id.toLowerCase().includes(searchTerm)
-    );
-  }
+  const entities = getVisibleEntities();
   entities.forEach(e => selectedEntities.add(e.entity_id));
   renderEntityList();
   renderDomainList();
@@ -281,20 +327,33 @@ function selectAllVisible() {
 }
 
 function deselectAllVisible() {
-  if (!activeDomain) return;
-  const searchTerm = document.getElementById('search-input').value.toLowerCase();
-  let entities = allDomains[activeDomain];
-  if (searchTerm) {
-    entities = entities.filter(e =>
-      e.friendly_name.toLowerCase().includes(searchTerm) ||
-      e.entity_id.toLowerCase().includes(searchTerm)
-    );
-  }
+  const entities = getVisibleEntities();
   entities.forEach(e => selectedEntities.delete(e.entity_id));
   renderEntityList();
   renderDomainList();
   updateExposedCount();
   scheduleAutoSave();
+}
+
+function getVisibleEntities() {
+  const searchTerm = document.getElementById('search-input').value.toLowerCase();
+  let entities;
+
+  if (searchTerm) {
+    entities = getAllEntitiesFlat().filter(e =>
+      e.friendly_name.toLowerCase().includes(searchTerm) ||
+      e.entity_id.toLowerCase().includes(searchTerm)
+    );
+  } else if (activeDomain === '__exposed__') {
+    entities = getExposedEntities();
+  } else if (activeDomain === '__all__') {
+    entities = getAllEntitiesFlat();
+  } else if (activeDomain && allDomains[activeDomain]) {
+    entities = allDomains[activeDomain];
+  } else {
+    entities = [];
+  }
+  return entities;
 }
 
 // ─── Save Selection ────────────────────────────
@@ -405,6 +464,7 @@ async function applyPreset(name) {
     renderEntityList();
     renderDomainList();
     updateExposedCount();
+    scheduleAutoSave();
     showToast(`Loaded preset "${name}" with ${selectedEntities.size} entities.`);
     switchTab('entities');
   } catch (err) {
@@ -460,7 +520,7 @@ async function exportConfig() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'ai_sensor_exporter_config.json';
+    a.download = 'clawbridge_config.json';
     a.click();
     URL.revokeObjectURL(url);
     showToast('Configuration exported.');
