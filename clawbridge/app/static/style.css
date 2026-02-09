@@ -615,7 +615,7 @@ body {
 }
 
 .number-input {
-  width: 60px;
+  width: 72px;
   padding: 5px 8px;
   background: var(--bg-input);
   border: 1px solid var(--border);
