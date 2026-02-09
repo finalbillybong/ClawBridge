@@ -15,7 +15,14 @@ import aiohttp
 logger = logging.getLogger(__name__)
 
 HA_URL = "http://supervisor/core"
-SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
+
+
+def _get_token():
+    """Get the Supervisor token, trying both env var names."""
+    token = os.environ.get("SUPERVISOR_TOKEN", "")
+    if not token:
+        token = os.environ.get("HASSIO_TOKEN", "")
+    return token
 
 
 class HAClient:
@@ -31,8 +38,10 @@ class HAClient:
 
     async def start(self):
         """Initialize the HTTP session."""
+        token = _get_token()
+        logger.info("Supervisor token present: %s (length: %d)", bool(token), len(token))
         self._session = aiohttp.ClientSession(
-            headers={"Authorization": f"Bearer {SUPERVISOR_TOKEN}"}
+            headers={"Authorization": f"Bearer {token}"}
         )
         await self._load_areas()
         await self._load_entity_registry()
