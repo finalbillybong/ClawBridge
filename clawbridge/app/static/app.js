@@ -10,6 +10,7 @@ let allDomains = {};
 let selectedEntities = new Set();
 let activeDomain = null; // null = no domain, '__exposed__' = exposed view, '__all__' = all entities
 let currentTab = 'entities';
+let undoSnapshot = null; // stores previous selectedEntities for undo
 
 // Domain icons (mdi-style emoji fallbacks)
 const DOMAIN_ICONS = {
@@ -315,24 +316,54 @@ function toggleEntity(entityId) {
   scheduleAutoSave();
 }
 
+// ─── Undo ───────────────────────────────────────
+
+function pushUndo() {
+  undoSnapshot = new Set(selectedEntities);
+}
+
+function undo() {
+  if (!undoSnapshot) return;
+  selectedEntities = new Set(undoSnapshot);
+  undoSnapshot = null;
+  renderEntityList();
+  renderDomainList();
+  updateExposedCount();
+  scheduleAutoSave();
+  showToast(`Restored! ${selectedEntities.size} entities exposed.`);
+}
+
 // ─── Select / Deselect All ─────────────────────
 
 function selectAllVisible() {
   const entities = getVisibleEntities();
+  if (entities.length === 0) return;
+  pushUndo();
   entities.forEach(e => selectedEntities.add(e.entity_id));
   renderEntityList();
   renderDomainList();
   updateExposedCount();
   scheduleAutoSave();
+  showUndoToast(`Selected ${entities.length} entities.`);
 }
 
 function deselectAllVisible() {
   const entities = getVisibleEntities();
+  if (entities.length === 0) return;
+
+  // Confirmation when deselecting all on the Exposed view
+  const searchTerm = document.getElementById('search-input').value.toLowerCase();
+  if (activeDomain === '__exposed__' && !searchTerm) {
+    if (!confirm(`Deselect all ${entities.length} exposed entities? You can undo this afterwards.`)) return;
+  }
+
+  pushUndo();
   entities.forEach(e => selectedEntities.delete(e.entity_id));
   renderEntityList();
   renderDomainList();
   updateExposedCount();
   scheduleAutoSave();
+  showUndoToast(`Deselected ${entities.length} entities.`);
 }
 
 function getVisibleEntities() {
@@ -565,11 +596,22 @@ function setStatus(connected, text) {
   statusText.textContent = text;
 }
 
+let toastTimer = null;
+
 function showToast(message, isError = false) {
   const toast = document.getElementById('toast');
   toast.textContent = message;
   toast.className = 'toast show' + (isError ? ' error' : '');
-  setTimeout(() => toast.classList.remove('show'), 3000);
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+function showUndoToast(message) {
+  const toast = document.getElementById('toast');
+  toast.innerHTML = `${escapeHtml(message)} <button class="toast-undo-btn" onclick="undo()">UNDO</button>`;
+  toast.className = 'toast show';
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 8000);
 }
 
 function escapeHtml(str) {
