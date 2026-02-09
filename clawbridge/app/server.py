@@ -11,6 +11,7 @@ import logging
 import os
 import sys
 
+import aiohttp as aiohttp_client
 from aiohttp import web
 
 from config_manager import ConfigManager
@@ -27,6 +28,28 @@ logger = logging.getLogger("clawbridge")
 # Globals
 config_mgr = ConfigManager()
 ha_client = HAClient()
+ingress_url = ""  # Will be set at startup
+
+
+async def fetch_ingress_url():
+    """Fetch the ingress URL from the Supervisor API."""
+    global ingress_url
+    token = os.environ.get("SUPERVISOR_TOKEN", "")
+    try:
+        async with aiohttp_client.ClientSession(
+            headers={"Authorization": f"Bearer {token}"}
+        ) as session:
+            async with session.get("http://supervisor/addons/self/info") as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    addon_data = data.get("data", {})
+                    ingress_url = addon_data.get("ingress_url", "")
+                    logger.info("Ingress URL from Supervisor: %s", ingress_url)
+                else:
+                    body = await resp.text()
+                    logger.warning("Failed to get addon info: HTTP %d - %s", resp.status, body)
+    except Exception as e:
+        logger.warning("Failed to fetch ingress URL: %s", e)
 
 
 # ──────────────────────────────────────────────
@@ -34,7 +57,7 @@ ha_client = HAClient()
 # ──────────────────────────────────────────────
 
 async def handle_index(request):
-    """Serve the main setup UI with CSS/JS inlined to avoid ingress path issues."""
+    """Serve the main setup UI with CSS/JS inlined."""
     static_dir = os.path.join(os.path.dirname(__file__), "static")
 
     with open(os.path.join(static_dir, "index.html"), "r") as f:
@@ -44,7 +67,7 @@ async def handle_index(request):
     with open(os.path.join(static_dir, "app.js"), "r") as f:
         js = f.read()
 
-    # Inline CSS and JS to avoid ingress path issues with external files
+    # Inline CSS and JS
     html = html.replace(
         '<link rel="stylesheet" href="{{INGRESS_PATH}}/static/style.css">',
         f"<style>{css}</style>"
@@ -52,6 +75,18 @@ async def handle_index(request):
     html = html.replace(
         '<script src="{{INGRESS_PATH}}/static/app.js"></script>',
         f"<script>{js}</script>"
+    )
+
+    # Inject the ingress base path for API calls
+    # Also try to detect from X-Ingress-Path header as fallback
+    base_path = ingress_url.rstrip("/")
+    if not base_path:
+        base_path = request.headers.get("X-Ingress-Path", "")
+    logger.debug("Serving index with base_path: %s", base_path)
+
+    html = html.replace(
+        "const BASE_PATH = window.location.pathname.replace(/\\/$/, '');",
+        f"const BASE_PATH = '{base_path}';"
     )
 
     return web.Response(text=html, content_type="text/html")
@@ -197,23 +232,8 @@ async def api_ai_sensors(request):
 
 async def on_startup(app):
     """Start HA client and background refresh on app startup."""
-    # Debug: log all relevant environment variables
-    logger.info("=== Environment Debug ===")
-    token = os.environ.get("SUPERVISOR_TOKEN", "")
-    logger.info("SUPERVISOR_TOKEN present: %s (length: %d)", bool(token), len(token))
-    logger.info("HASSIO_TOKEN present: %s", bool(os.environ.get("HASSIO_TOKEN", "")))
-    logger.info("INGRESS_PORT: %s", os.environ.get("INGRESS_PORT", "not set"))
-    logger.info("INGRESS_PATH: %s", os.environ.get("INGRESS_PATH", "not set"))
-
-    # Log all env vars containing interesting keywords
-    for key, val in sorted(os.environ.items()):
-        key_lower = key.lower()
-        if any(k in key_lower for k in ("supervisor", "hassio", "home", "token", "ingress")):
-            if "token" in key_lower:
-                logger.info("  ENV %s = [%d chars]", key, len(val))
-            else:
-                logger.info("  ENV %s = %s", key, val)
-    logger.info("=========================")
+    # Fetch ingress URL from Supervisor
+    await fetch_ingress_url()
 
     await ha_client.start()
     app["refresh_task"] = asyncio.create_task(

@@ -1,6 +1,6 @@
 name: "ClawBridge"
 description: "Bridge your Home Assistant sensors to AI agents via a simple, unauthenticated JSON endpoint."
-version: "1.0.2"
+version: "1.0.3"
 slug: "clawbridge"
 url: "https://github.com/finalbillybong/ClawBridge"
 arch:
