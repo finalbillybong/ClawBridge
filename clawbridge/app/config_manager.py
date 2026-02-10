@@ -19,6 +19,8 @@ DEFAULT_CONFIG = {
     "refresh_interval": 5,
     "filter_unavailable": True,
     "compact_mode": False,
+    # Exposed actions: service_id -> list of entity_ids the AI may target (e.g. "light.turn_on" -> ["light.office"])
+    "exposed_actions": {},
 }
 
 
@@ -107,6 +109,23 @@ class ConfigManager:
     @compact_mode.setter
     def compact_mode(self, value):
         self._config["compact_mode"] = bool(value)
+        self._save()
+
+    @property
+    def exposed_actions(self):
+        """Allowed actions: dict of service_id -> list of entity_ids (e.g. light.turn_on -> [light.office])."""
+        return self._config.get("exposed_actions", {})
+
+    @exposed_actions.setter
+    def exposed_actions(self, value):
+        if not isinstance(value, dict):
+            value = {}
+        # Normalize: keys service_id, values list of entity_id strings
+        self._config["exposed_actions"] = {
+            k: list(v) if isinstance(v, (list, tuple)) else []
+            for k, v in value.items()
+            if k and isinstance(k, str)
+        }
         self._save()
 
     def export_config(self):

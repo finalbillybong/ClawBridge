@@ -217,6 +217,33 @@ class HAClient:
             "total_sensors": len(sensors),
         }
 
+    async def get_services(self):
+        """Fetch available HA services (domain -> list of service names). Returns dict."""
+        try:
+            async with self._session.get(f"{HA_URL}/api/services") as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    # HA returns list of { "domain": "light", "services": ["turn_on", "turn_off", ...] }
+                    return {item["domain"]: item.get("services", []) for item in data}
+                logger.warning("Failed to fetch services: HTTP %d", resp.status)
+        except Exception as e:
+            logger.warning("Failed to fetch services: %s", e)
+        return {}
+
+    async def call_service(self, domain, service, service_data):
+        """Call a Home Assistant service. service_data is the JSON body (e.g. entity_id, etc.)."""
+        try:
+            url = f"{HA_URL}/api/services/{domain}/{service}"
+            async with self._session.post(url, json=service_data) as resp:
+                if resp.status in (200, 201):
+                    return True, await resp.json()
+                body = await resp.text()
+                logger.warning("Service call failed: %s/%s HTTP %d %s", domain, service, resp.status, body[:200])
+                return False, {"error": body or f"HTTP {resp.status}"}
+        except Exception as e:
+            logger.exception("Error calling service %s.%s: %s", domain, service, e)
+            return False, {"error": str(e)}
+
     async def periodic_refresh(self, interval=5):
         """Background task to periodically refresh states."""
         while True:

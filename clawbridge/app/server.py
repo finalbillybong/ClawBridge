@@ -214,15 +214,74 @@ async def api_import_config(request):
 # ──────────────────────────────────────────────
 
 async def api_ai_sensors(request):
-    """Public endpoint for AI agents to scrape sensor data."""
+    """Public endpoint for AI agents to scrape sensor data and see allowed actions."""
     data = await ha_client.get_exposed_data(
         config_mgr.selected_entities,
         filter_unavailable=config_mgr.filter_unavailable,
         compact=config_mgr.compact_mode,
     )
+    # Include allowed actions so the AI knows what it can call (e.g. light.turn_on on light.office only)
+    data["actions"] = config_mgr.exposed_actions
     return web.json_response(data, headers={
         "Access-Control-Allow-Origin": "*",
         "Cache-Control": "no-cache",
+    })
+
+
+async def api_get_services(request):
+    """Return available HA services (domain -> list of service names) for the actions UI."""
+    services = await ha_client.get_services()
+    return web.json_response({"services": services})
+
+
+async def api_get_actions_config(request):
+    """Return current exposed actions config."""
+    return web.json_response({"exposed_actions": config_mgr.exposed_actions})
+
+
+async def api_save_actions_config(request):
+    """Save exposed actions (service_id -> list of entity_ids)."""
+    data = await request.json()
+    exposed = data.get("exposed_actions", {})
+    config_mgr.exposed_actions = exposed
+    return web.json_response({"status": "ok", "count": len(exposed)})
+
+
+async def api_ai_action(request):
+    """Public endpoint for AI to call an allowed service. Validates against exposed_actions."""
+    if request.method != "POST":
+        return web.json_response({"error": "Method not allowed"}, status=405)
+    try:
+        body = await request.json()
+    except Exception as e:
+        return web.json_response({"error": f"Invalid JSON: {e}"}, status=400)
+
+    service_id = body.get("service") or body.get("service_id")
+    if not service_id or "." not in service_id:
+        return web.json_response({"error": "Missing or invalid 'service' (e.g. light.turn_on)"}, status=400)
+
+    domain, service = service_id.split(".", 1)
+    entity_id = body.get("entity_id")
+    extra_data = body.get("data") or body.get("service_data") or {}
+
+    allowed_entities = config_mgr.exposed_actions.get(service_id)
+    if allowed_entities is None:
+        return web.json_response({"error": f"Service {service_id} is not exposed to the AI"}, status=403)
+    if entity_id and allowed_entities and entity_id not in allowed_entities:
+        return web.json_response({"error": f"Entity {entity_id} is not allowed for {service_id}"}, status=403)
+    if not entity_id and allowed_entities:
+        return web.json_response({"error": f"Service {service_id} requires an entity_id from {allowed_entities}"}, status=400)
+
+    service_data = dict(extra_data)
+    if entity_id:
+        service_data["entity_id"] = entity_id
+
+    ok, result = await ha_client.call_service(domain, service, service_data)
+    if not ok:
+        return web.json_response({"error": result.get("error", "Service call failed")}, status=502)
+
+    return web.json_response({"status": "ok", "result": result}, headers={
+        "Access-Control-Allow-Origin": "*",
     })
 
 
@@ -273,19 +332,27 @@ def create_ingress_app():
     app.router.add_get("/api/config/export", api_export_config)
     app.router.add_post("/api/config/import", api_import_config)
 
-    # Also serve AI endpoint on ingress for testing
+    # Actions (exposed services for AI)
+    app.router.add_get("/api/services", api_get_services)
+    app.router.add_get("/api/actions-config", api_get_actions_config)
+    app.router.add_post("/api/actions-config", api_save_actions_config)
+
+    # Also serve AI endpoints on ingress for testing
     app.router.add_get("/api/ai-sensors", api_ai_sensors)
+    app.router.add_post("/api/ai-action", api_ai_action)
 
     return app
 
 
 def create_public_app():
-    """Create the public app (AI endpoint only, no auth required)."""
+    """Create the public app (AI endpoints only, no auth required)."""
     app = web.Application()
 
-    # Only the read-only AI endpoint
+    # Read-only sensor data + allowed actions list
     app.router.add_get("/api/ai-sensors", api_ai_sensors)
     app.router.add_get("/", api_ai_sensors)  # Also serve at root for convenience
+    # AI can call allowed services via this endpoint
+    app.router.add_post("/api/ai-action", api_ai_action)
 
     return app
 

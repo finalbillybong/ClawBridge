@@ -12,6 +12,10 @@ let activeDomain = null; // null = no domain, '__exposed__' = exposed view, '__a
 let currentTab = 'entities';
 let undoSnapshot = null; // stores previous selectedEntities for undo
 
+// Actions tab: service_id -> list of entity_ids the AI may use
+let actionsServices = {}; // domain -> [service names]
+let exposedActions = {};  // e.g. { "light.turn_on": ["light.office"] }
+
 // Domain icons (mdi-style emoji fallbacks)
 const DOMAIN_ICONS = {
   __exposed__: '⭐',
@@ -420,10 +424,12 @@ function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   document.getElementById('tab-entities').style.display = tab === 'entities' ? '' : 'none';
+  document.getElementById('tab-actions').style.display = tab === 'actions' ? '' : 'none';
   document.getElementById('tab-presets').style.display = tab === 'presets' ? '' : 'none';
   document.getElementById('tab-settings').style.display = tab === 'settings' ? '' : 'none';
 
   if (tab === 'presets') loadPresets();
+  if (tab === 'actions') loadActionsTab();
 }
 
 // ─── Presets ───────────────────────────────────
@@ -511,6 +517,122 @@ async function deletePreset(name) {
     loadPresets();
   } catch (err) {
     showToast('Failed to delete preset.', true);
+  }
+}
+
+// ─── Actions tab ──────────────────────────────
+
+async function loadActionsTab() {
+  const loadingEl = document.getElementById('actions-loading');
+  const listEl = document.getElementById('actions-list');
+  loadingEl.style.display = 'flex';
+  listEl.innerHTML = '';
+
+  try {
+    const [servicesResp, configResp] = await Promise.all([
+      apiGet('/api/services'),
+      apiGet('/api/actions-config'),
+    ]);
+    actionsServices = servicesResp.services || {};
+    exposedActions = configResp.exposed_actions || {};
+    if (typeof exposedActions !== 'object') exposedActions = {};
+    renderActionsList();
+  } catch (err) {
+    console.error('Failed to load actions:', err);
+    listEl.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">⚠️</div>
+        <h3>Failed to load</h3>
+        <p>Could not load services or actions config. Check add-on logs.</p>
+      </div>`;
+  } finally {
+    loadingEl.style.display = 'none';
+  }
+}
+
+function renderActionsList() {
+  const listEl = document.getElementById('actions-list');
+  const domains = Object.keys(actionsServices).filter(d => (actionsServices[d] || []).length > 0).sort();
+
+  if (domains.length === 0) {
+    listEl.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📡</div>
+        <h3>No services</h3>
+        <p>No callable services returned from Home Assistant.</p>
+      </div>`;
+    return;
+  }
+
+  let html = '';
+  for (const domain of domains) {
+    const services = actionsServices[domain] || [];
+    const entities = (allDomains[domain] || []).map(e => ({ entity_id: e.entity_id, friendly_name: e.friendly_name }));
+    const icon = DOMAIN_ICONS[domain] || '📦';
+
+    html += `<div class="action-domain">
+      <div class="action-domain-header">${icon} ${domain}</div>`;
+
+    for (const svc of services.sort()) {
+      const serviceId = `${domain}.${svc}`;
+      const allowed = exposedActions[serviceId] || [];
+
+      html += `<div class="action-service-row">
+        <span class="action-service-name">${escapeHtml(serviceId)}</span>
+        <div class="action-entity-chips">`;
+
+      if (entities.length > 0) {
+        for (const ent of entities) {
+          const isSelected = allowed.includes(ent.entity_id);
+          html += `<span class="action-entity-chip ${isSelected ? 'selected' : ''}"
+            data-service="${escapeAttr(serviceId)}"
+            data-entity="${escapeAttr(ent.entity_id)}"
+            onclick="toggleActionEntity('${escapeAttr(serviceId)}', '${escapeAttr(ent.entity_id)}')"
+            title="${escapeAttr(ent.entity_id)}">${escapeHtml(ent.friendly_name)}</span>`;
+        }
+      } else {
+        const isNoEntitySelected = Array.isArray(exposedActions[serviceId]) && exposedActions[serviceId].length === 0;
+        html += `<span class="action-entity-chip no-entity ${isNoEntitySelected ? 'selected' : ''}"
+          data-service="${escapeAttr(serviceId)}"
+          data-entity=""
+          onclick="toggleActionEntity('${escapeAttr(serviceId)}', '')"
+          title="Allow call without entity_id">Allow (no entity)</span>`;
+      }
+
+      html += `</div></div>`;
+    }
+    html += '</div>';
+  }
+  listEl.innerHTML = html;
+}
+
+function toggleActionEntity(serviceId, entityId) {
+  const list = exposedActions[serviceId] || [];
+  if (entityId === '') {
+    if (Array.isArray(exposedActions[serviceId]) && exposedActions[serviceId].length === 0) {
+      delete exposedActions[serviceId];
+    } else {
+      exposedActions[serviceId] = [];
+    }
+  } else {
+    const idx = list.indexOf(entityId);
+    if (idx >= 0) {
+      list.splice(idx, 1);
+      if (list.length === 0) delete exposedActions[serviceId];
+      else exposedActions[serviceId] = list;
+    } else {
+      exposedActions[serviceId] = [...(exposedActions[serviceId] || []), entityId];
+    }
+  }
+  renderActionsList();
+}
+
+async function saveActionsConfig() {
+  try {
+    await apiPost('/api/actions-config', { exposed_actions: exposedActions });
+    showToast('Actions saved. OpenClaw can use only these services/entities.');
+  } catch (err) {
+    showToast('Failed to save actions.', true);
   }
 }
 

@@ -50,6 +50,7 @@
     <!-- Tabs -->
     <div class="tabs">
       <div class="tab active" data-tab="entities" onclick="switchTab('entities')">entities</div>
+      <div class="tab" data-tab="actions" onclick="switchTab('actions')">actions</div>
       <div class="tab" data-tab="presets" onclick="switchTab('presets')">presets</div>
       <div class="tab" data-tab="settings" onclick="switchTab('settings')">settings</div>
     </div>
@@ -70,6 +71,23 @@
           <span>loading entities...</span>
         </div>
       </div>
+    </div>
+
+    <!-- Actions Tab -->
+    <div id="tab-actions" style="display:none;">
+      <div class="toolbar">
+        <span style="font-size:11px; color:var(--text-3); font-family:var(--mono);">// which services OpenClaw can call, and on which entities</span>
+        <div style="flex:1;"></div>
+        <button class="btn btn-primary" onclick="saveActionsConfig()">save actions</button>
+      </div>
+      <div class="actions-help" style="font-size:11px; color:var(--text-3); margin-bottom:12px; padding:8px 12px; background:var(--bg-3); border-radius:var(--radius-sm); border:1px solid var(--border);">
+        Expose only the services and entities you want the AI to control. Example: allow <code>light.turn_on</code> and <code>light.turn_off</code> for <code>light.office</code> so the AI can only turn the office light on/off.
+      </div>
+      <div id="actions-loading" class="loading-overlay" style="display:none;">
+        <div class="spinner"></div>
+        <span>loading services...</span>
+      </div>
+      <div id="actions-list" class="actions-list"></div>
     </div>
 
     <!-- Presets Tab -->
@@ -116,10 +134,13 @@
         </div>
         <div class="setting-row">
           <div>
-            <div class="setting-label">AI Endpoint</div>
+            <div class="setting-label">AI Endpoints</div>
             <div class="setting-desc">// share with your agents (no auth required)</div>
           </div>
-          <code style="color:var(--claw); font-size:11px; background:var(--bg-input); padding:5px 10px; border-radius:var(--radius-sm); font-family:var(--mono); border:1px solid var(--border);" id="endpoint-url">:8100/api/ai-sensors</code>
+          <div style="display:flex; flex-direction:column; gap:6px; align-items:flex-end;">
+            <code style="color:var(--claw); font-size:11px; background:var(--bg-input); padding:5px 10px; border-radius:var(--radius-sm); font-family:var(--mono); border:1px solid var(--border);">GET :8100/api/ai-sensors</code>
+            <code style="color:var(--bridge); font-size:11px; background:var(--bg-input); padding:5px 10px; border-radius:var(--radius-sm); font-family:var(--mono); border:1px solid var(--border);">POST :8100/api/ai-action</code>
+          </div>
         </div>
         <div style="margin-top:14px; display:flex; gap:6px;">
           <button class="btn btn-primary" onclick="saveSettings()">save settings</button>

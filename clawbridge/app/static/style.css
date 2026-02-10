@@ -686,6 +686,97 @@ body {
   gap: 4px;
 }
 
+/* ─── Actions tab ──────────────────────────── */
+
+.actions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.action-domain {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.action-domain-header {
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-0);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.action-service-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.action-service-row:last-child {
+  border-bottom: none;
+}
+
+.action-service-name {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--bridge);
+  min-width: 160px;
+  padding-top: 2px;
+}
+
+.action-entity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+}
+
+.action-entity-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-family: var(--mono);
+  background: var(--bg-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-2);
+  transition: var(--transition);
+}
+
+.action-entity-chip:hover {
+  border-color: var(--border-hover);
+  color: var(--text-1);
+}
+
+.action-entity-chip.selected {
+  background: var(--success-dim);
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.action-entity-chip.no-entity {
+  font-style: italic;
+  color: var(--text-3);
+}
+
+.action-entity-chip.no-entity.selected {
+  color: var(--success);
+}
+
 /* ─── Empty State ───────────────────────────── */
 
 .empty-state {
