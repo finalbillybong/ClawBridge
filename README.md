@@ -1,6 +1,6 @@
 # ClawBridge
 
-Bidirectional air gap between AI agents and Home Assistant. Exposes only the entities you choose, with per-entity read-only vs control access levels.
+Bidirectional air gap between AI agents and Home Assistant. Exposes only the entities you choose, with per-entity access levels and comprehensive security controls.
 
 ## Installation
 
@@ -16,11 +16,17 @@ Bidirectional air gap between AI agents and Home Assistant. Exposes only the ent
 ## What It Does
 
 - **Air gap** between your AI agent (OpenClaw) and Home Assistant
-- Per-entity access control: **read-only** (AI can see state) or **control** (AI can see + call services)
+- Four-state per-entity access: **off** / **read** (AI sees state) / **confirm** (AI requests, human approves) / **control** (AI acts directly)
 - HA-compatible REST API on port 8100 -- standard HA client libraries work out of the box
-- Audit logging of all AI service calls
-- Rate limiting and IP allowlist for security
-- Sensitive domain warnings (lock, cover, alarm, climate)
+- WebSocket endpoint for real-time state change streaming
+- Entity annotations so AI understands what devices are and where they are
+- Parameter constraints to prevent extreme values (e.g., thermostat max 24°C)
+- Multi-agent API keys with per-key entity scoping
+- Time-based access schedules (e.g., AI can control lights 6am-11pm only)
+- Human-in-the-loop confirmation with HA mobile notifications
+- State history endpoint for AI pattern recognition
+- Audit logging and usage dashboard
+- Rate limiting and IP allowlist
 
 ## AI Endpoint
 
@@ -30,24 +36,35 @@ Point your AI agent at:
 http://<your-ha-ip>:8100/api/
 ```
 
-No authentication required. See [OPENCLAW_API.md](clawbridge/OPENCLAW_API.md) for the full API reference.
+No authentication required by default. See [OPENCLAW_API.md](clawbridge/OPENCLAW_API.md) for the full API reference.
 
 ## Features
 
-- Three-state entity access: off / read / control
+- Four-state entity access: off / read / confirm / control
 - HA-compatible REST API (`/api/states`, `/api/services/{domain}/{service}`)
+- WebSocket real-time streaming (`/api/websocket`)
+- State history access (`/api/history/period/{timestamp}`)
+- Entity annotations (descriptions for AI context)
+- Parameter constraints with auto-clamping
+- Multi-agent API keys with entity scoping
+- Time-based access schedules
+- Human-in-the-loop confirmation flow
+- Usage dashboard with analytics
 - Domain-based entity browser with real-time search
 - Audit log viewer with action history
-- Per-IP rate limiting (configurable)
+- Per-IP and per-key rate limiting
 - IP allowlist (optional)
 - Named presets with import/export
-- Automatic migration from older config format
+- Sensitive domain warnings (lock, cover, alarm, climate, valve)
 
 ## Security
 
 - Only explicitly exposed entities are visible to AI
 - Read-only entities cannot be controlled (403)
-- Sensitive domains require confirmation before granting control
+- Confirm entities require human approval before execution
+- Parameter constraints prevent extreme AI actions
+- Time schedules restrict when AI can act
+- API keys isolate different agents
 - All service calls are audit-logged
 - Rate limiting prevents abuse
 - Optional IP allowlist restricts access

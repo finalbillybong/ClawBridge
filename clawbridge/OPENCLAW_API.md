@@ -1,14 +1,39 @@
-# ClawBridge API Reference for OpenClaw
+# ClawBridge API Reference
 
-This document describes the API that OpenClaw (or any AI agent) should use to interact with Home Assistant through ClawBridge. ClawBridge acts as an air gap -- you can only see and control entities that the user has explicitly exposed.
+This document is the API reference for AI agents (e.g., OpenClaw) integrating with ClawBridge. ClawBridge exposes a filtered subset of Home Assistant entities and services for safe AI-controlled automation.
 
-## Base URL
+**Base URL:** `http://localhost:8100` (or your ClawBridge host)
+
+---
+
+## Authentication
+
+If API keys are configured, include the bearer token in requests:
 
 ```
-http://<home-assistant-ip>:8100
+Authorization: Bearer cb_xxxx
 ```
 
-No authentication required. You may send an `Authorization: Bearer <any_value>` header if your client library requires one -- it will be accepted and ignored.
+If no API keys are configured, access is open and no `Authorization` header is required.
+
+---
+
+## Access Levels
+
+Entities are assigned one of three access levels:
+
+| Level    | Description |
+|----------|-------------|
+| `read`   | AI can read state but cannot control. Service calls return 403. |
+| `confirm`| AI can request actions, but they require human approval. Returns `202 Accepted` with an `action_id` for polling. |
+| `control`| AI can call services directly; requests are proxied to Home Assistant. |
+
+---
+
+## Rate Limiting
+
+- **Service calls:** 60 requests/minute per IP (default)
+- **History API:** 10 requests/minute per IP
 
 ---
 
@@ -16,9 +41,9 @@ No authentication required. You may send an `Authorization: Bearer <any_value>` 
 
 ### 1. Health Check
 
-```
-GET /api/
-```
+**GET** `/api/`
+
+Returns API status.
 
 **Response:**
 ```json
@@ -27,116 +52,56 @@ GET /api/
 
 ---
 
-### 2. Get All Entity States
+### 2. Configuration
 
-```
-GET /api/states
-```
+**GET** `/api/config`
 
-Returns the current state of every entity the user has exposed (both read-only and controllable). The response format matches Home Assistant's `/api/states` exactly.
-
-**Response:**
-```json
-[
-  {
-    "entity_id": "light.office",
-    "state": "on",
-    "attributes": {
-      "friendly_name": "Office Light",
-      "brightness": 180,
-      "color_mode": "brightness",
-      "supported_features": 0
-    },
-    "last_changed": "2026-02-10T14:30:00+00:00",
-    "last_updated": "2026-02-10T14:30:05+00:00",
-    "context": {"id": "...", "parent_id": null, "user_id": null}
-  },
-  {
-    "entity_id": "sensor.front_door",
-    "state": "off",
-    "attributes": {
-      "friendly_name": "Front Door Sensor",
-      "device_class": "door"
-    },
-    "last_changed": "2026-02-10T12:00:00+00:00",
-    "last_updated": "2026-02-10T14:30:05+00:00",
-    "context": {"id": "...", "parent_id": null, "user_id": null}
-  }
-]
-```
-
-**Note:** Entities the user has not exposed will NOT appear here. Do not assume any entity exists unless it appears in this response.
+Returns exposed domain list and version information.
 
 ---
 
-### 3. Get Single Entity State
+### 3. All Entity States
 
-```
-GET /api/states/{entity_id}
-```
+**GET** `/api/states`
 
-Returns state for one entity. Returns 404 if the entity is not exposed (regardless of whether it exists in Home Assistant).
+Returns all exposed entity states in Home Assistant format.
 
-**Example:**
-```
-GET /api/states/light.office
-```
-
-**Response (200):**
-```json
-{
-  "entity_id": "light.office",
-  "state": "on",
-  "attributes": {
-    "friendly_name": "Office Light",
-    "brightness": 180
-  },
-  "last_changed": "2026-02-10T14:30:00+00:00",
-  "last_updated": "2026-02-10T14:30:05+00:00",
-  "context": {"id": "...", "parent_id": null, "user_id": null}
-}
-```
-
-**Response (404 -- entity not exposed):**
-```json
-{"message": "Entity not found: light.bedroom"}
-```
+**Response (each state object):**
+- `entity_id` (string)
+- `state` (string)
+- `attributes` (object)
+- `last_changed` (ISO 8601)
+- `last_updated` (ISO 8601)
+- `context` (object)
+- `annotation` (optional, string): User-provided description
+- `constraints` (optional, object): Parameter limits
+- `access_level` (optional, string): `"read"` | `"confirm"` | `"control"`
 
 ---
 
-### 4. Get Available Services
+### 4. Single Entity State
 
-```
-GET /api/services
-```
+**GET** `/api/states/{entity_id}`
 
-Returns the list of services available for domains where the user has exposed at least one entity with **control** access. This tells you what actions you can take.
+Returns state for one entity. Same enriched format as above.
 
-**Response:**
-```json
-[
-  {
-    "domain": "light",
-    "services": ["turn_on", "turn_off", "toggle"]
-  },
-  {
-    "domain": "switch",
-    "services": ["turn_on", "turn_off", "toggle"]
-  }
-]
-```
-
-**Note:** If a domain is not listed here, you cannot call services on entities in that domain (even if you can see their state). The user has granted those entities read-only access.
+**Response:** 404 if entity is not exposed.
 
 ---
 
-### 5. Call a Service
+### 5. Available Services
 
-```
-POST /api/services/{domain}/{service}
-```
+**GET** `/api/services`
 
-Calls a Home Assistant service on one or more entities. This is how you control devices.
+Returns available services for domains that have control or confirm entities.
+
+---
+
+### 6. Call Service
+
+**POST** `/api/services/{domain}/{service}`
+
+Calls a Home Assistant service.
 
 **Request body:**
 ```json
@@ -146,175 +111,244 @@ Calls a Home Assistant service on one or more entities. This is how you control 
 }
 ```
 
-**Rules:**
-- The `entity_id` must be exposed with **control** access by the user
-- The entity domain must match the URL domain (e.g. `light.office` must be called via `/api/services/light/...`)
-- If the entity is exposed as **read-only**, you will get a 403
-- If the entity is not exposed at all, you will get a 403
+**Behavior by access level:**
+- **read:** Returns 403 Forbidden
+- **confirm:** Returns `202 Accepted` with `action_id` for polling
+- **control:** Proxied directly to Home Assistant
 
-**Response (200 -- success):**
-The response is a JSON array of states that changed (same format as Home Assistant).
-
-**Response (403 -- read-only entity):**
-```json
-{"message": "Entity light.bedroom is read-only. Control access not granted."}
-```
-
-**Response (403 -- entity not exposed):**
-```json
-{"message": "Entity not exposed: light.secret_room"}
-```
-
-**Response (429 -- rate limited):**
-```json
-{"message": "Rate limit exceeded. Try again later."}
-```
+**Validation:**
+- Parameters are validated against constraints (clamped to min/max)
+- Schedule restrictions apply: 403 if outside allowed time window
+- Subject to rate limiting
 
 ---
 
-### 6. Get Sensor Data (Legacy)
+### 7. Parameter Constraints
 
-```
-GET /api/ai-sensors
-```
+**GET** `/api/constraints`
 
-ClawBridge-specific format with extra metadata. Returns all exposed entities plus access level information.
+Returns all parameter constraints for exposed entities.
+
+---
+
+### 8. History
+
+**GET** `/api/history/period/{timestamp}`
+
+Proxies to Home Assistant history API, filtered to exposed entities only.
+
+**Query parameters:**
+- `filter_entity_id` (optional): Comma-separated entity IDs
+- `end_time` (optional): End of period
+
+**Rate limit:** 10 requests/minute.
+
+---
+
+### 9. Confirmation Action Status
+
+**GET** `/api/actions/{action_id}`
+
+Poll status of a confirmation action (for `confirm`-level entities).
 
 **Response:**
-```json
-{
-  "sensors": [
-    {
-      "entity_id": "light.office",
-      "friendly_name": "Office Light",
-      "state": "on",
-      "last_state": "off",
-      "last_changed": "2026-02-10T14:30:00+00:00",
-      "unit_of_measurement": null,
-      "device_class": null,
-      "area": "Office"
-    }
-  ],
-  "last_updated": "2026-02-10T14:35:00+00:00",
-  "total_sensors": 1,
-  "entity_access": {
-    "light.office": "control",
-    "sensor.front_door": "read"
-  },
-  "controllable_entities": ["light.office"],
-  "control_domains": ["light"]
-}
-```
+- `action_id` (string)
+- `status` (string): `"pending"` | `"approved"` | `"denied"` | `"expired"`
+- `entity_id` (string)
+- `domain` (string)
+- `service` (string)
 
 ---
 
-### 7. Call a Service (Legacy)
+### 10. WebSocket
 
-```
-POST /api/ai-action
-```
+**GET** `/api/websocket`
 
-Alternative to the HA-compatible service endpoint.
+WebSocket endpoint for real-time state changes.
 
-**Request body:**
-```json
-{
-  "service": "light.turn_on",
-  "entity_id": "light.office",
-  "data": {"brightness": 200}
-}
-```
+**Protocol:**
 
-**Response (200):**
-```json
-{"status": "ok", "result": [...]}
-```
+1. Server sends: `{"type": "auth_required"}`
+2. Client sends: `{"type": "auth", "api_key": "cb_xxxx"}` (omit `api_key` if no keys configured)
+3. Server sends: `{"type": "auth_ok"}`
+4. Server pushes: `{"type": "state_changed", "entity_id": "...", "new_state": {...}, "old_state": {...}}`
+5. Client may send: `{"type": "subscribe", "entity_ids": ["light.office"]}` to narrow subscription
 
 ---
 
-## Access Levels Explained
+### 11. Legacy Endpoints
 
-The user configures each entity with one of these access levels:
+**GET** `/api/ai-sensors`
 
-| Access | You can read state | You can call services |
-|--------|-------------------|----------------------|
-| **read** | Yes | No (403 if attempted) |
-| **control** | Yes | Yes |
+Returns ClawBridge-format sensor data (legacy).
 
-Entities not exposed at all will return 404 on `/api/states/{entity_id}` and will not appear in `/api/states`.
+**POST** `/api/ai-action`
 
-**How to check what you can control:**
-1. Call `GET /api/services` -- the listed domains are your controllable domains
-2. Call `GET /api/states` -- cross-reference with the domains above
-3. Or use `GET /api/ai-sensors` which includes `entity_access` and `controllable_entities`
+ClawBridge-format service call (legacy).
 
 ---
 
-## Rate Limiting
+## Python Usage Examples
 
-Service calls (`POST /api/services/...`) are rate-limited per IP address. Default: 60 requests/minute. If exceeded, you receive a 429 response. Wait and retry.
-
-State queries (`GET /api/states`, `GET /api/states/{id}`) are NOT rate-limited.
-
----
-
-## Error Handling
-
-| Status | Meaning |
-|--------|---------|
-| 200 | Success |
-| 400 | Bad request (malformed JSON, domain mismatch) |
-| 403 | Entity not exposed, or read-only, or IP blocked |
-| 404 | Entity not found (not exposed) |
-| 429 | Rate limit exceeded |
-| 502 | Home Assistant returned an error |
-
-All error responses include a `message` field:
-```json
-{"message": "Descriptive error message here"}
-```
-
----
-
-## Usage with Standard HA Client Libraries
-
-ClawBridge's port 8100 API is designed to be compatible with Home Assistant REST API client libraries. Example with Python:
+### Fetching States
 
 ```python
 import requests
 
-BASE = "http://192.168.1.100:8100"
-HEADERS = {"Authorization": "Bearer dummy", "Content-Type": "application/json"}
+BASE_URL = "http://localhost:8100"
+HEADERS = {"Authorization": "Bearer cb_xxxx"}  # Omit if no keys configured
 
-# Get all available entities
-states = requests.get(f"{BASE}/api/states", headers=HEADERS).json()
-for entity in states:
-    print(f"{entity['entity_id']}: {entity['state']}")
+# Get all states
+resp = requests.get(f"{BASE_URL}/api/states", headers=HEADERS)
+states = resp.json()
 
-# Check what services are available
-services = requests.get(f"{BASE}/api/services", headers=HEADERS).json()
-for svc in services:
-    print(f"{svc['domain']}: {svc['services']}")
+# Get single entity
+resp = requests.get(f"{BASE_URL}/api/states/light.office", headers=HEADERS)
+if resp.status_code == 200:
+    state = resp.json()
+    print(f"{state['entity_id']}: {state['state']}")
+elif resp.status_code == 404:
+    print("Entity not exposed")
+```
 
-# Turn on a light
-requests.post(
-    f"{BASE}/api/services/light/turn_on",
+### Calling a Service
+
+```python
+import requests
+
+BASE_URL = "http://localhost:8100"
+HEADERS = {"Authorization": "Bearer cb_xxxx", "Content-Type": "application/json"}
+
+# Direct control (control-level entity)
+resp = requests.post(
+    f"{BASE_URL}/api/services/light/turn_on",
     headers=HEADERS,
     json={"entity_id": "light.office", "brightness": 200}
 )
+
+if resp.status_code == 200:
+    print("Service called successfully")
+elif resp.status_code == 403:
+    print("Access denied: read-only or schedule restriction")
+```
+
+### Handling Confirmations
+
+```python
+import requests
+import time
+
+BASE_URL = "http://localhost:8100"
+HEADERS = {"Authorization": "Bearer cb_xxxx", "Content-Type": "application/json"}
+
+# Request action on confirm-level entity
+resp = requests.post(
+    f"{BASE_URL}/api/services/switch/turn_on",
+    headers=HEADERS,
+    json={"entity_id": "switch.heater"}
+)
+
+if resp.status_code == 202:
+    data = resp.json()
+    action_id = data["action_id"]
+
+    # Poll for result
+    while True:
+        poll = requests.get(f"{BASE_URL}/api/actions/{action_id}", headers=HEADERS)
+        result = poll.json()
+
+        if result["status"] == "approved":
+            print("Action approved and executed")
+            break
+        elif result["status"] == "denied":
+            print("Action denied by user")
+            break
+        elif result["status"] == "expired":
+            print("Action expired")
+            break
+
+        time.sleep(1)
+```
+
+### Using WebSocket
+
+```python
+import asyncio
+import websockets
+import json
+
+async def watch_states():
+    uri = "ws://localhost:8100/api/websocket"
+
+    async with websockets.connect(uri) as ws:
+        # Auth flow
+        msg = await ws.recv()
+        data = json.loads(msg)
+        if data.get("type") == "auth_required":
+            await ws.send(json.dumps({"type": "auth", "api_key": "cb_xxxx"}))
+            # Omit api_key if no keys: {"type": "auth"}
+
+        auth_ok = await ws.recv()
+        assert json.loads(auth_ok).get("type") == "auth_ok"
+
+        # Subscribe to specific entities
+        await ws.send(json.dumps({
+            "type": "subscribe",
+            "entity_ids": ["light.office", "sensor.temperature"]
+        }))
+
+        # Listen for state changes
+        async for raw in ws:
+            evt = json.loads(raw)
+            if evt.get("type") == "state_changed":
+                print(f"{evt['entity_id']}: {evt['old_state']['state']} -> {evt['new_state']['state']}")
+
+asyncio.run(watch_states())
+```
+
+### Querying History
+
+```python
+import requests
+from datetime import datetime, timedelta
+
+BASE_URL = "http://localhost:8100"
+HEADERS = {"Authorization": "Bearer cb_xxxx"}
+
+# History for last 24 hours
+end = datetime.utcnow()
+start = end - timedelta(hours=24)
+timestamp = start.strftime("%Y-%m-%dT%H:%M:%S")
+
+url = f"{BASE_URL}/api/history/period/{timestamp}"
+params = {"end_time": end.strftime("%Y-%m-%dT%H:%M:%S")}
+# Optional: filter_entity_id=light.office,sensor.temperature
+
+resp = requests.get(url, headers=HEADERS, params=params)
+
+if resp.status_code == 200:
+    # Each element is a list of state changes for one entity
+    history = resp.json()
+    for entity_history in history:
+        for change in entity_history:
+            print(f"{change['entity_id']}: {change['state']} at {change['last_changed']}")
 ```
 
 ---
 
-## Audit Trail
+## Summary Table
 
-All service calls (successful and denied) are logged by ClawBridge. The user can review these logs in the ClawBridge web UI under the **Audit** tab. Each log entry records:
-
-- Timestamp
-- Entity ID
-- Domain and service called
-- Result (success, denied, error, rate_limited)
-- Source IP address
-- Response time
-
-If you receive a 403 and believe you should have access, ask the user to check ClawBridge's entity settings and grant the appropriate access level.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/` | Health check |
+| GET | `/api/config` | Config, domains, version |
+| GET | `/api/states` | All entity states |
+| GET | `/api/states/{entity_id}` | Single entity state |
+| GET | `/api/services` | Available services |
+| POST | `/api/services/{domain}/{service}` | Call service |
+| GET | `/api/constraints` | Parameter constraints |
+| GET | `/api/history/period/{timestamp}` | History (filtered) |
+| GET | `/api/actions/{action_id}` | Poll confirmation status |
+| GET | `/api/websocket` | WebSocket real-time updates |
+| GET | `/api/ai-sensors` | Legacy sensor format |
+| POST | `/api/ai-action` | Legacy action format |

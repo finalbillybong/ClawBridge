@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.0 - Feature Expansion Release
+
+- **Four-state entity access**: off / read / confirm / control — confirm entities require human approval via HA notification
+- **Entity annotations**: User-written descriptions visible to AI (context for ambiguous entities)
+- **Parameter constraints**: Min/max limits on service call parameters with auto-clamping
+- **Multi-agent API keys**: Optional Bearer auth, per-key entity scoping, per-key rate limiting
+- **Time-based access schedules**: Named schedules assigned to entities to restrict control hours
+- **Human-in-the-loop confirmation**: Confirm entities return 202 Accepted; HA notification for approval
+- **WebSocket real-time state streaming**: State changes pushed to connected AI clients
+- **State history endpoint**: Proxy HA history API, filtered to exposed entities
+- **Usage dashboard**: Stats cards, hourly chart, top entities analytics
+- **Modern 2026 UI redesign**: Glassmorphism, bottom status dock, SVG icons
+- **Security tab**: API keys management, schedules, pending approvals view
+
 ## 1.1.1 - Security Patch
 
 - **Fix**: Prevent domain-wide wildcard attacks -- service calls without an `entity_id` now only target explicitly allowed control entities instead of all entities in the domain

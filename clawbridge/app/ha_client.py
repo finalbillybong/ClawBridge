@@ -1,6 +1,7 @@
-"""Home Assistant WebSocket API client.
+"""Home Assistant API client.
 
-Connects to the HA WebSocket API to fetch entity states in real time.
+Connects to HA via REST API for state polling and service calls.
+Supports WebSocket for real-time state change subscriptions.
 Uses the Supervisor API token for authentication.
 """
 
@@ -15,6 +16,7 @@ import aiohttp
 logger = logging.getLogger(__name__)
 
 HA_URL = "http://supervisor/core"
+HA_WS_URL = "ws://supervisor/core/websocket"
 
 
 def _get_token():
@@ -35,6 +37,12 @@ class HAClient:
         self._entity_registry = {}
         self._device_registry = {}
         self._session = None
+        # WebSocket
+        self._ws = None
+        self._ws_task = None
+        self._ws_msg_id = 1
+        self._state_change_callbacks = []
+        self._ws_connected = False
 
     async def start(self):
         """Initialize the HTTP session."""
@@ -48,23 +56,121 @@ class HAClient:
         await self._load_device_registry()
         await self.refresh_states()
         logger.info("HA Client started, loaded %d entities", len(self._states))
+        # Start WebSocket connection for real-time updates
+        self._ws_task = asyncio.create_task(self._ws_listener())
 
     async def stop(self):
-        """Close the HTTP session."""
+        """Close the HTTP session and WebSocket."""
+        if self._ws_task:
+            self._ws_task.cancel()
+            try:
+                await self._ws_task
+            except asyncio.CancelledError:
+                pass
+        if self._ws:
+            await self._ws.close()
         if self._session:
             await self._session.close()
+
+    # ── WebSocket for real-time state changes ─────
+
+    async def _ws_listener(self):
+        """Maintain a persistent WebSocket connection to HA for state_changed events."""
+        token = _get_token()
+        while True:
+            try:
+                async with self._session.ws_connect(HA_WS_URL) as ws:
+                    self._ws = ws
+                    logger.info("WebSocket connected to HA")
+
+                    # HA sends auth_required first
+                    msg = await ws.receive_json()
+                    if msg.get("type") == "auth_required":
+                        await ws.send_json({"type": "auth", "access_token": token})
+                        auth_result = await ws.receive_json()
+                        if auth_result.get("type") != "auth_ok":
+                            logger.error("WebSocket auth failed: %s", auth_result)
+                            await asyncio.sleep(10)
+                            continue
+
+                    self._ws_connected = True
+                    logger.info("WebSocket authenticated with HA")
+
+                    # Subscribe to state_changed events
+                    sub_id = self._ws_msg_id
+                    self._ws_msg_id += 1
+                    await ws.send_json({
+                        "id": sub_id,
+                        "type": "subscribe_events",
+                        "event_type": "state_changed",
+                    })
+
+                    async for raw_msg in ws:
+                        if raw_msg.type == aiohttp.WSMsgType.TEXT:
+                            try:
+                                data = json.loads(raw_msg.data)
+                            except json.JSONDecodeError:
+                                continue
+
+                            if data.get("type") == "event":
+                                event = data.get("event", {})
+                                event_data = event.get("data", {})
+                                entity_id = event_data.get("entity_id")
+                                new_state = event_data.get("new_state")
+                                old_state = event_data.get("old_state")
+
+                                if entity_id and new_state:
+                                    # Update internal state cache
+                                    if entity_id in self._states:
+                                        old_cached = self._states[entity_id]
+                                        if old_cached.get("state") != new_state.get("state"):
+                                            self._previous_states[entity_id] = old_cached.get("state")
+                                    self._states[entity_id] = new_state
+
+                                    # Notify callbacks
+                                    for callback in self._state_change_callbacks:
+                                        try:
+                                            await callback(entity_id, new_state, old_state)
+                                        except Exception as e:
+                                            logger.error("State change callback error: %s", e)
+
+                        elif raw_msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                            break
+
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning("WebSocket connection lost: %s. Reconnecting in 5s...", e)
+            finally:
+                self._ws_connected = False
+                self._ws = None
+
+            await asyncio.sleep(5)
+
+    def subscribe_state_changes(self, callback):
+        """Register a callback for state changes: async callback(entity_id, new_state, old_state)."""
+        self._state_change_callbacks.append(callback)
+
+    def unsubscribe_state_changes(self, callback):
+        """Unregister a state change callback."""
+        self._state_change_callbacks = [cb for cb in self._state_change_callbacks if cb is not callback]
+
+    @property
+    def ws_connected(self):
+        """Whether the HA WebSocket is connected."""
+        return self._ws_connected
+
+    # ── Area / Registry loading ───────────────────
 
     async def _load_areas(self):
         """Load area registry from HA."""
         try:
             async with self._session.get(f"{HA_URL}/api/config") as resp:
                 if resp.status == 200:
-                    # Areas are fetched via websocket/template, use a workaround
                     pass
         except Exception as e:
             logger.warning("Failed to load areas: %s", e)
 
-        # Use the template API to get areas
         try:
             async with self._session.post(
                 f"{HA_URL}/api/template",
@@ -72,10 +178,8 @@ class HAClient:
             ) as resp:
                 if resp.status == 200:
                     text = await resp.text()
-                    # Parse the area IDs
                     area_ids = json.loads(text.replace("'", '"'))
                     for area_id in area_ids:
-                        # Get area name
                         async with self._session.post(
                             f"{HA_URL}/api/template",
                             json={"template": f"{{{{ area_name('{area_id}') }}}}"},
@@ -119,6 +223,8 @@ class HAClient:
             pass
         return None
 
+    # ── State management ──────────────────────────
+
     async def refresh_states(self):
         """Fetch all current entity states from HA."""
         try:
@@ -128,12 +234,10 @@ class HAClient:
                     new_states = {}
                     for state in states:
                         entity_id = state.get("entity_id", "")
-                        # Track previous state
                         if entity_id in self._states:
                             old = self._states[entity_id]
                             if old.get("state") != state.get("state"):
                                 self._previous_states[entity_id] = old.get("state")
-
                         new_states[entity_id] = state
                     self._states = new_states
                     logger.debug("Refreshed %d entity states", len(self._states))
@@ -159,7 +263,6 @@ class HAClient:
                 "unit_of_measurement": attrs.get("unit_of_measurement"),
                 "icon": attrs.get("icon"),
             })
-        # Sort entities within each domain
         for domain in domains:
             domains[domain].sort(key=lambda e: e.get("friendly_name", "").lower())
         return domains
@@ -176,7 +279,6 @@ class HAClient:
             state = self._states[entity_id]
             current_state = state.get("state", "unknown")
 
-            # Filter unavailable/unknown if requested
             if filter_unavailable and current_state in ("unavailable", "unknown"):
                 continue
 
@@ -201,7 +303,6 @@ class HAClient:
                     "area": area,
                 }
 
-                # Add useful extra attributes if present
                 extra_attrs = {}
                 for key in ("battery_level", "temperature", "humidity", "brightness", "color_temp"):
                     if key in attrs:
@@ -227,7 +328,6 @@ class HAClient:
             current = state.get("state", "unknown")
             if filter_unavailable and current in ("unavailable", "unknown"):
                 continue
-            # Mirror HA's exact format
             results.append({
                 "entity_id": entity_id,
                 "state": current,
@@ -252,13 +352,37 @@ class HAClient:
             "context": state.get("context", {"id": "", "parent_id": None, "user_id": None}),
         }
 
+    # ── History ───────────────────────────────────
+
+    async def get_history(self, start_time, entity_ids, end_time=None):
+        """Fetch state history from HA for specific entities.
+        Returns list of lists (one per entity) of state objects.
+        """
+        try:
+            params = {
+                "filter_entity_id": ",".join(entity_ids),
+                "minimal_response": "true",
+            }
+            if end_time:
+                params["end_time"] = end_time
+
+            url = f"{HA_URL}/api/history/period/{start_time}"
+            async with self._session.get(url, params=params) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                logger.warning("Failed to fetch history: HTTP %d", resp.status)
+        except Exception as e:
+            logger.warning("Failed to fetch history: %s", e)
+        return []
+
+    # ── Services ──────────────────────────────────
+
     async def get_services(self):
         """Fetch available HA services (domain -> list of service names). Returns dict."""
         try:
             async with self._session.get(f"{HA_URL}/api/services") as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    # HA returns list of { "domain": "light", "services": ["turn_on", "turn_off", ...] }
                     return {item["domain"]: item.get("services", []) for item in data}
                 logger.warning("Failed to fetch services: HTTP %d", resp.status)
         except Exception as e:
