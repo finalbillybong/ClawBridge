@@ -20,13 +20,16 @@ If no API keys are configured, access is open and no `Authorization` header is r
 
 ## Access Levels
 
-Entities are assigned one of three access levels:
+Entities are assigned one of four access levels:
 
 | Level    | Description |
 |----------|-------------|
+| `off`    | Entity is hidden from AI entirely. Not returned in any endpoint. |
 | `read`   | AI can read state but cannot control. Service calls return 403. |
-| `confirm`| AI can request actions, but they require human approval. Returns `202 Accepted` with an `action_id` for polling. |
+| `confirm`| AI can request actions, but they require human approval via phone notification (Approve/Deny buttons). Returns `202 Accepted` with an `action_id` for polling. |
 | `control`| AI can call services directly; requests are proxied to Home Assistant. |
+
+**Note:** Some domains are inherently read-only (e.g., `sensor`, `binary_sensor`, `weather`, `sun`, `person`, `device_tracker`) and only support `off` or `read`. These entities will never have `confirm` or `control` access.
 
 ---
 
@@ -113,11 +116,11 @@ Calls a Home Assistant service.
 
 **Behavior by access level:**
 - **read:** Returns 403 Forbidden
-- **confirm:** Returns `202 Accepted` with `action_id` for polling
+- **confirm:** Returns `202 Accepted` with `action_id` for polling. A push notification with Approve/Deny buttons is sent to the user's phone.
 - **control:** Proxied directly to Home Assistant
 
 **Validation:**
-- Parameters are validated against constraints (clamped to min/max)
+- Parameters are validated against constraints (clamped to min/max). Only parameters the entity actually supports are constrained.
 - Schedule restrictions apply: 403 if outside allowed time window
 - Subject to rate limiting
 
@@ -304,6 +307,49 @@ async def watch_states():
                 print(f"{evt['entity_id']}: {evt['old_state']['state']} -> {evt['new_state']['state']}")
 
 asyncio.run(watch_states())
+```
+
+### Managing To-Do Lists
+
+```python
+import requests
+
+BASE_URL = "http://localhost:8100"
+HEADERS = {"Authorization": "Bearer cb_xxxx", "Content-Type": "application/json"}
+
+# Add item to a to-do list
+resp = requests.post(
+    f"{BASE_URL}/api/services/todo/add_item",
+    headers=HEADERS,
+    json={"entity_id": "todo.shopping_list", "item": "Milk"}
+)
+
+# Mark item as completed
+resp = requests.post(
+    f"{BASE_URL}/api/services/todo/update_item",
+    headers=HEADERS,
+    json={"entity_id": "todo.shopping_list", "item": "Milk", "status": "completed"}
+)
+```
+
+### Creating Calendar Events
+
+```python
+import requests
+
+BASE_URL = "http://localhost:8100"
+HEADERS = {"Authorization": "Bearer cb_xxxx", "Content-Type": "application/json"}
+
+resp = requests.post(
+    f"{BASE_URL}/api/services/calendar/create_event",
+    headers=HEADERS,
+    json={
+        "entity_id": "calendar.family",
+        "summary": "Dentist appointment",
+        "start_date_time": "2026-02-15T10:00:00",
+        "end_date_time": "2026-02-15T11:00:00"
+    }
+)
 ```
 
 ### Querying History

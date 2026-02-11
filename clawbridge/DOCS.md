@@ -1,4 +1,4 @@
-# ClawBridge Documentation (v1.2.2)
+# ClawBridge Documentation (v1.2.4)
 
 ClawBridge provides an **AI guard rail** between AI agents (OpenClaw, etc.) and Home Assistant. Users maintain explicit control over which entities are exposed for reading and/or control, with granular access levels, human-in-the-loop confirmation, and multi-agent security.
 
@@ -27,12 +27,21 @@ Each entity has one of **four** access levels:
 | **Confirm** | Yes | Yes (queued) | AI can call services, but request returns **202 Accepted**. Action is queued until a human approves it via the HA notification. |
 | **Control** | Yes | Yes (immediate) | AI can call services directly. Action executes immediately. |
 
+### Read-Only Domains
+
+Some entity domains are inherently read-only and only support **Off** or **Read** access. The UI hides the Confirm and Control options for these domains:
+
+`sensor`, `binary_sensor`, `weather`, `sun`, `zone`, `person`, `device_tracker`, `geo_location`, `air_quality`, `image`
+
+All other domains (including `light`, `switch`, `climate`, `todo`, `calendar`, `cover`, `lock`, etc.) support all four access levels.
+
 ### Examples
 
 - **Off**: `lock.front_door` — AI cannot see or control the lock.
 - **Read**: `sensor.front_door` — AI knows when the door opens, but cannot unlock.
-- **Confirm**: `cover.garage` — AI can request to open, but you must approve via HA notification.
+- **Confirm**: `cover.garage` — AI can request to open, but you must approve via phone notification (Approve/Deny buttons).
 - **Control**: `light.office` — AI can turn on/off immediately.
+- **Read (sensor)**: `sensor.temperature` — AI can see the value. Confirm/Control not available (read-only domain).
 
 ---
 
@@ -80,6 +89,8 @@ For service call parameters (e.g., `brightness`, `temperature`), you can define:
 
 - **Min / max** numeric limits
 - **Auto-clamping**: values outside the range are automatically clamped to the nearest valid value before the service call is executed
+
+The constraint editor is **smart** — it only shows parameters the entity actually supports (based on its real Home Assistant attributes). For example, a simple on/off light won't show brightness or color_temp options, while a dimmable light will.
 
 Example: `brightness` for `light.office` constrained to 1–255. If AI sends `brightness: 500`, it is clamped to 255.
 
@@ -159,10 +170,12 @@ Action is queued; HA notification sent for human approval.
 
 For entities with **confirm** access:
 
-1. AI sends service call → ClawBridge returns **202 Accepted**.
-2. Action is queued; HA notification is sent.
-3. User approves or rejects in HA.
-4. On approval, the service call executes.
+1. AI sends service call → ClawBridge returns **202 Accepted** with an `action_id`.
+2. Action is queued; an **actionable push notification** is sent to your phone (iOS and Android via HA Companion App) with **Approve** and **Deny** buttons.
+3. Tap **Approve** to execute the action, or **Deny** to reject it. You can also poll `GET /api/actions/{action_id}` for the status.
+4. Actions expire after a configurable timeout (default 5 minutes).
+
+The notification message uses the **AI name** (configurable in Settings, e.g., "OpenClaw") and the **device friendly name** (e.g., "Office Light") instead of raw entity IDs.
 
 ---
 
@@ -180,14 +193,15 @@ For entities with **confirm** access:
 |---------|-------------|
 | **AI guard rail** | AI sees/calls only what you expose |
 | **Four access levels** | Off / Read / Confirm / Control |
-| **Human-in-the-loop** | Confirm entities require HA approval |
+| **Human-in-the-loop** | Confirm entities require phone approval (actionable Approve/Deny buttons) |
 | **Multi-agent API keys** | Optional Bearer auth, per-key entity scoping |
 | **Rate limiting** | Per-IP and per-key |
 | **IP allowlist** | Restrict which IPs can access port 8100 |
 | **Audit logging** | All service calls (success, denied, queued) with retention |
 | **Sensitive domain warnings** | lock, cover, alarm, climate, valve require explicit confirmation |
-| **Parameter constraints** | Min/max limits, auto-clamping |
+| **Parameter constraints** | Min/max limits, auto-clamping, smart filtering by entity capabilities |
 | **Time-based schedules** | Restrict control to allowed hours |
+| **Read-only domain filtering** | sensor, binary_sensor, weather, etc. limited to off/read only |
 
 ---
 
@@ -203,6 +217,8 @@ For entities with **confirm** access:
 | Rate Limit (per IP) | Max service calls/minute per IP | 60 |
 | Rate Limit (per key) | Max service calls/minute per API key | 60 |
 | IP Allowlist | Restrict port 8100 access (empty = all) | Empty |
+| AI Name | Name shown in confirmation notifications (e.g., "OpenClaw") | AI |
+| Confirm Timeout | Seconds before pending confirm actions expire | 300 |
 | Sensitive Domains | Domains requiring explicit control confirmation | lock, cover, alarm_control_panel, climate, valve |
 
 ---

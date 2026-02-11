@@ -23,7 +23,9 @@ AI guard rail for Home Assistant. Exposes only the entities you choose, with per
 - Parameter constraints to prevent extreme values (e.g., thermostat max 24°C)
 - Multi-agent API keys with per-key entity scoping
 - Time-based access schedules (e.g., AI can control lights 6am-11pm only)
-- Human-in-the-loop confirmation with HA mobile notifications
+- Human-in-the-loop confirmation with actionable Approve/Deny push notifications (iOS + Android)
+- Customisable AI name in notifications (e.g., "OpenClaw wants to turn on Office Light")
+- Smart read-only domain detection (sensors, binary sensors, etc. only get off/read)
 - State history endpoint for AI pattern recognition
 - Audit logging and usage dashboard
 - Rate limiting and IP allowlist
@@ -58,7 +60,7 @@ To give your AI the ability to control Home Assistant through ClawBridge:
 - Parameter constraints with auto-clamping
 - Multi-agent API keys with entity scoping
 - Time-based access schedules
-- Human-in-the-loop confirmation flow
+- Human-in-the-loop confirmation with actionable phone notifications
 - Usage dashboard with analytics
 - Domain-based entity browser with real-time search
 - Audit log viewer with action history
@@ -66,12 +68,14 @@ To give your AI the ability to control Home Assistant through ClawBridge:
 - IP allowlist (optional)
 - Named presets with import/export
 - Sensitive domain warnings (lock, cover, alarm, climate, valve)
+- Read-only domain filtering (sensor, binary_sensor, weather, etc.)
+- Smart constraint editor (only shows parameters the entity supports)
 
 ## Security
 
 - Only explicitly exposed entities are visible to AI
 - Read-only entities cannot be controlled (403)
-- Confirm entities require human approval before execution
+- Confirm entities require human approval via phone notification (Approve/Deny buttons)
 - Parameter constraints prevent extreme AI actions
 - Time schedules restrict when AI can act
 - API keys isolate different agents
