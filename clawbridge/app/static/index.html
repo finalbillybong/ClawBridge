@@ -24,12 +24,20 @@
         </svg>
         ClawBridge
       </h1>
-      <div class="subtitle">// bridge sensors to ai</div>
+      <div class="subtitle">// air gap for ai</div>
     </div>
 
     <div class="sidebar-stats">
-      <span>exposed</span>
-      <span class="count" id="exposed-count">0</span>
+      <div style="display:flex; flex-direction:column; gap:2px; width:100%;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span>exposed</span>
+          <span class="count" id="exposed-count" style="font-size:16px;">0</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:10px; opacity:0.8;">
+          <span><span id="read-count">0</span> read</span>
+          <span><span id="control-count">0</span> control</span>
+        </div>
+      </div>
     </div>
 
     <div class="domain-list" id="domain-list">
@@ -50,7 +58,7 @@
     <!-- Tabs -->
     <div class="tabs">
       <div class="tab active" data-tab="entities" onclick="switchTab('entities')">entities</div>
-      <div class="tab" data-tab="actions" onclick="switchTab('actions')">actions</div>
+      <div class="tab" data-tab="audit" onclick="switchTab('audit')">audit</div>
       <div class="tab" data-tab="presets" onclick="switchTab('presets')">presets</div>
       <div class="tab" data-tab="settings" onclick="switchTab('settings')">settings</div>
     </div>
@@ -62,7 +70,8 @@
           <span class="search-icon">&#128269;</span>
           <input type="text" id="search-input" placeholder="search all entities..." oninput="filterEntities()">
         </div>
-        <button class="btn" onclick="selectAllVisible()">select all</button>
+        <button class="btn" onclick="selectAllVisible('read')">all read</button>
+        <button class="btn" onclick="selectAllVisible('control')">all control</button>
         <button class="btn" onclick="deselectAllVisible()">deselect all</button>
       </div>
       <div class="entity-list" id="entity-list">
@@ -73,21 +82,17 @@
       </div>
     </div>
 
-    <!-- Actions Tab -->
-    <div id="tab-actions" style="display:none;">
+    <!-- Audit Tab -->
+    <div id="tab-audit" style="display:none;">
       <div class="toolbar">
-        <span style="font-size:11px; color:var(--text-3); font-family:var(--mono);">// which services OpenClaw can call, and on which entities</span>
+        <span style="font-size:11px; color:var(--text-3); font-family:var(--mono);">// ai action log</span>
         <div style="flex:1;"></div>
-        <button class="btn btn-primary" onclick="saveActionsConfig()">save actions</button>
+        <button class="btn" onclick="loadAuditLogs()">refresh</button>
+        <button class="btn btn-danger" onclick="clearAuditLogs()">clear</button>
       </div>
-      <div class="actions-help" style="font-size:11px; color:var(--text-3); margin-bottom:12px; padding:8px 12px; background:var(--bg-3); border-radius:var(--radius-sm); border:1px solid var(--border);">
-        Expose only the services and entities you want the AI to control. Example: allow <code>light.turn_on</code> and <code>light.turn_off</code> for <code>light.office</code> so the AI can only turn the office light on/off.
+      <div class="audit-list" id="audit-list">
+        <div class="empty-state"><div class="empty-icon">📋</div><h3>No audit logs</h3><p>Service calls from OpenClaw will appear here.</p></div>
       </div>
-      <div id="actions-loading" class="loading-overlay" style="display:none;">
-        <div class="spinner"></div>
-        <span>loading services...</span>
-      </div>
-      <div id="actions-list" class="actions-list"></div>
     </div>
 
     <!-- Presets Tab -->
@@ -134,12 +139,44 @@
         </div>
         <div class="setting-row">
           <div>
-            <div class="setting-label">AI Endpoints</div>
-            <div class="setting-desc">// share with your agents (no auth required)</div>
+            <div class="setting-label">Audit Logging</div>
+            <div class="setting-desc">// log all AI service calls</div>
           </div>
-          <div style="display:flex; flex-direction:column; gap:6px; align-items:flex-end;">
-            <code style="color:var(--claw); font-size:11px; background:var(--bg-input); padding:5px 10px; border-radius:var(--radius-sm); font-family:var(--mono); border:1px solid var(--border);">GET :8100/api/ai-sensors</code>
-            <code style="color:var(--bridge); font-size:11px; background:var(--bg-input); padding:5px 10px; border-radius:var(--radius-sm); font-family:var(--mono); border:1px solid var(--border);">POST :8100/api/ai-action</code>
+          <label class="toggle">
+            <input type="checkbox" id="setting-audit-enabled" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Audit Retention</div>
+            <div class="setting-desc">// days to keep audit logs (1-365)</div>
+          </div>
+          <input type="number" class="number-input" id="setting-audit-retention" min="1" max="365" value="30">
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Rate Limit</div>
+            <div class="setting-desc">// max service calls per minute per IP</div>
+          </div>
+          <input type="number" class="number-input" id="setting-rate-limit" min="1" max="600" value="60">
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">IP Allowlist</div>
+            <div class="setting-desc">// comma-separated IPs (empty = allow all)</div>
+          </div>
+          <input type="text" class="text-input" id="setting-allowed-ips" placeholder="e.g. 192.168.1.50" style="width:200px; padding:5px 8px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text-0); font-size:11px; font-family:var(--mono); outline:none;">
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">AI Endpoints (HA-compatible)</div>
+            <div class="setting-desc">// point OpenClaw at these (no auth required)</div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-end;">
+            <code style="color:var(--bridge); font-size:10px; background:var(--bg-input); padding:4px 8px; border-radius:var(--radius-sm); font-family:var(--mono); border:1px solid var(--border);">GET :8100/api/states</code>
+            <code style="color:var(--success); font-size:10px; background:var(--bg-input); padding:4px 8px; border-radius:var(--radius-sm); font-family:var(--mono); border:1px solid var(--border);">POST :8100/api/services/domain/service</code>
+            <code style="color:var(--text-3); font-size:10px; background:var(--bg-input); padding:4px 8px; border-radius:var(--radius-sm); font-family:var(--mono); border:1px solid var(--border);">GET :8100/api/ai-sensors (legacy)</code>
           </div>
         </div>
         <div style="margin-top:14px; display:flex; gap:6px;">
@@ -170,6 +207,22 @@
     <div class="modal-actions">
       <button class="btn" onclick="hidePresetModal()">cancel</button>
       <button class="btn btn-primary" onclick="savePreset()">save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sensitive Domain Modal -->
+<div class="modal-overlay" id="sensitive-modal">
+  <div class="modal">
+    <h3 style="color:var(--warning);">Security Warning</h3>
+    <p id="sensitive-modal-text" style="font-size:12px; color:var(--text-2); margin-bottom:14px;"></p>
+    <label style="display:flex; align-items:center; gap:8px; font-size:11px; color:var(--text-2); margin-bottom:14px; cursor:pointer;">
+      <input type="checkbox" id="sensitive-confirm-check">
+      I understand this grants AI control over this device
+    </label>
+    <div class="modal-actions">
+      <button class="btn" onclick="cancelSensitiveModal()">cancel</button>
+      <button class="btn btn-primary" id="sensitive-confirm-btn" onclick="confirmSensitiveModal()" disabled>confirm</button>
     </div>
   </div>
 </div>

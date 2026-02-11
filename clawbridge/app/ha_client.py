@@ -217,6 +217,41 @@ class HAClient:
             "total_sensors": len(sensors),
         }
 
+    def get_ha_format_states(self, entity_ids, filter_unavailable=True):
+        """Return states in Home Assistant's exact /api/states JSON format for given entity_ids."""
+        results = []
+        for entity_id in entity_ids:
+            if entity_id not in self._states:
+                continue
+            state = self._states[entity_id]
+            current = state.get("state", "unknown")
+            if filter_unavailable and current in ("unavailable", "unknown"):
+                continue
+            # Mirror HA's exact format
+            results.append({
+                "entity_id": entity_id,
+                "state": current,
+                "attributes": state.get("attributes", {}),
+                "last_changed": state.get("last_changed", ""),
+                "last_updated": state.get("last_updated", ""),
+                "context": state.get("context", {"id": "", "parent_id": None, "user_id": None}),
+            })
+        return results
+
+    def get_ha_format_single(self, entity_id):
+        """Return a single entity state in HA format, or None if not found."""
+        if entity_id not in self._states:
+            return None
+        state = self._states[entity_id]
+        return {
+            "entity_id": entity_id,
+            "state": state.get("state", "unknown"),
+            "attributes": state.get("attributes", {}),
+            "last_changed": state.get("last_changed", ""),
+            "last_updated": state.get("last_updated", ""),
+            "context": state.get("context", {"id": "", "parent_id": None, "user_id": None}),
+        }
+
     async def get_services(self):
         """Fetch available HA services (domain -> list of service names). Returns dict."""
         try:

@@ -1,11 +1,11 @@
 # ClawBridge
 
-Bridge your Home Assistant sensors to AI agents via a simple, unauthenticated JSON endpoint.
+Bidirectional air gap between AI agents and Home Assistant. Exposes only the entities you choose, with per-entity read-only vs control access levels.
 
 ## Installation
 
-1. In Home Assistant, go to **Settings → Add-ons → Add-on Store**
-2. Click the three dots menu (top right) → **Repositories**
+1. In Home Assistant, go to **Settings > Add-ons > Add-on Store**
+2. Click the three dots menu (top right) > **Repositories**
 3. Add this repository URL:
    ```
    https://github.com/finalbillybong/ClawBridge
@@ -15,30 +15,42 @@ Bridge your Home Assistant sensors to AI agents via a simple, unauthenticated JS
 
 ## What It Does
 
-- Provides a clean UI to browse and select which Home Assistant entities to expose
-- Bridges selected entity data to AI agents as JSON at `/api/ai-sensors` (no authentication required)
-- Perfect for AI agents, dashboards, or custom integrations that need read-only sensor access
+- **Air gap** between your AI agent (OpenClaw) and Home Assistant
+- Per-entity access control: **read-only** (AI can see state) or **control** (AI can see + call services)
+- HA-compatible REST API on port 8100 -- standard HA client libraries work out of the box
+- Audit logging of all AI service calls
+- Rate limiting and IP allowlist for security
+- Sensitive domain warnings (lock, cover, alarm, climate)
 
 ## AI Endpoint
 
-Once configured, your AI agents can fetch sensor data from:
+Point your AI agent at:
 
 ```
-http://<your-ha-ip>:8099/api/ai-sensors
+http://<your-ha-ip>:8100/api/
 ```
 
-No authentication required. Read-only. Only exposes entities you explicitly select.
+No authentication required. See [OPENCLAW_API.md](clawbridge/OPENCLAW_API.md) for the full API reference.
 
 ## Features
 
-- Domain-based entity browser
-- Real-time search and filtering
-- Bulk select/deselect per domain
-- Named presets (e.g. "Weather", "Security", "Energy")
-- Configurable refresh interval (1-60s)
-- Filter out unavailable/unknown entities
-- Compact mode for minimal JSON
-- Export/Import configuration
+- Three-state entity access: off / read / control
+- HA-compatible REST API (`/api/states`, `/api/services/{domain}/{service}`)
+- Domain-based entity browser with real-time search
+- Audit log viewer with action history
+- Per-IP rate limiting (configurable)
+- IP allowlist (optional)
+- Named presets with import/export
+- Automatic migration from older config format
+
+## Security
+
+- Only explicitly exposed entities are visible to AI
+- Read-only entities cannot be controlled (403)
+- Sensitive domains require confirmation before granting control
+- All service calls are audit-logged
+- Rate limiting prevents abuse
+- Optional IP allowlist restricts access
 
 ## Screenshots
 
