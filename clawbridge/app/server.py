@@ -63,13 +63,14 @@ async def fetch_ingress_url():
 # ──────────────────────────────────────────────
 
 def _get_client_ip(request):
-    """Extract client IP from request."""
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    """Extract client IP from request. Prefer socket IP to prevent X-Forwarded-For spoofing."""
     peername = request.transport.get_extra_info("peername")
     if peername:
         return peername[0]
+    # Fallback only (less trusted)
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
     return "unknown"
 
 
@@ -436,10 +437,14 @@ async def ha_api_call_service(request):
                 {"message": f"Domain mismatch: {eid} is not in domain {domain}"}, status=400, headers=CORS_HEADERS
             )
 
-    # If no entity specified, check that domain has control entities (some services don't need entity_id)
+    # If no entity specified, inject the list of control entities for this domain
+    # so HA only acts on allowed ones (prevents "all entities" wildcard attack)
     if not entity_ids:
-        control_domains = config_mgr.get_control_domains()
-        if domain not in control_domains:
+        control_entities_in_domain = [
+            eid for eid in config_mgr.get_control_entity_ids()
+            if eid.startswith(domain + ".")
+        ]
+        if not control_entities_in_domain:
             await audit_logger.log_action(
                 "service_call", domain=domain, service=service,
                 source_ip=ip, result="denied", error="domain_not_exposed",
@@ -447,6 +452,9 @@ async def ha_api_call_service(request):
             return web.json_response(
                 {"message": f"No control entities exposed in domain {domain}"}, status=403, headers=CORS_HEADERS
             )
+        # Force entity_id to only the allowed entities
+        body["entity_id"] = control_entities_in_domain if len(control_entities_in_domain) > 1 else control_entities_in_domain[0]
+        entity_ids = control_entities_in_domain
 
     # Proxy to Home Assistant
     ok, result = await ha_client.call_service(domain, service, body)
@@ -534,6 +542,21 @@ async def api_ai_action(request):
                 source_ip=ip, result="denied", error="read_only_entity",
             )
             return web.json_response({"error": f"Entity {entity_id} is read-only"}, status=403)
+    else:
+        # No entity_id provided: inject allowed control entities for this domain
+        # to prevent "all entities" wildcard attack
+        control_entities_in_domain = [
+            eid for eid in config_mgr.get_control_entity_ids()
+            if eid.startswith(domain + ".")
+        ]
+        if not control_entities_in_domain:
+            await audit_logger.log_action(
+                "service_call", domain=domain, service=service,
+                source_ip=ip, result="denied", error="domain_not_exposed",
+            )
+            return web.json_response({"error": f"No control entities in domain {domain}"}, status=403)
+        entity_id = control_entities_in_domain[0] if len(control_entities_in_domain) == 1 else None
+        extra_data["entity_id"] = control_entities_in_domain if len(control_entities_in_domain) > 1 else control_entities_in_domain[0]
 
     service_data = dict(extra_data)
     if entity_id:
