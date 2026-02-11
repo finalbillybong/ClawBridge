@@ -16,6 +16,7 @@ let currentTab = 'dashboard';
 let undoSnapshot = null;
 
 const SENSITIVE_DOMAINS = ['lock', 'cover', 'alarm_control_panel', 'climate', 'valve'];
+const READ_ONLY_DOMAINS = ['sensor', 'binary_sensor', 'weather', 'sun', 'zone', 'person', 'device_tracker', 'geo_location', 'air_quality', 'image'];
 let pendingSensitiveCallback = null;
 
 const DOMAIN_ICONS = {
@@ -183,6 +184,7 @@ function renderEntityList() {
     const domainBadge = (searchTerm || activeDomain === '__exposed__' || activeDomain === '__all__')
       ? `<span style="color:var(--text-3);font-size:10px;background:var(--bg-4);padding:1px 6px;border-radius:4px;font-family:var(--mono);">${entity.domain}</span>` : '';
     const sensitiveIcon = isSensitive && (access === 'control' || access === 'confirm') ? '<span class="sensitive-badge" title="Sensitive domain">⚠️</span>' : '';
+    const isReadOnly = READ_ONLY_DOMAINS.includes(entity.domain);
     const annotation = entityAnnotations[entity.entity_id];
     const annotationLine = annotation ? `<div class="entity-annotation">${escapeHtml(annotation)}</div>` : '';
     const hasConstraints = entityConstraints[entity.entity_id];
@@ -193,8 +195,8 @@ function renderEntityList() {
       <div class="entity-access-toggle" onclick="event.stopPropagation()">
         <button class="access-btn ${access === null ? 'active' : ''}" onclick="setEntityAccess('${entity.entity_id}', null)" title="Not exposed">off</button>
         <button class="access-btn read ${access === 'read' ? 'active' : ''}" onclick="setEntityAccess('${entity.entity_id}', 'read')" title="AI can see state">read</button>
-        <button class="access-btn confirm ${access === 'confirm' ? 'active' : ''}" onclick="setEntityAccess('${entity.entity_id}', 'confirm')" title="AI can request actions (requires approval)">ask</button>
-        <button class="access-btn control ${access === 'control' ? 'active' : ''}" onclick="setEntityAccess('${entity.entity_id}', 'control')" title="AI can call services directly">ctrl</button>
+        ${isReadOnly ? '' : `<button class="access-btn confirm ${access === 'confirm' ? 'active' : ''}" onclick="setEntityAccess('${entity.entity_id}', 'confirm')" title="AI can request actions (requires approval)">ask</button>
+        <button class="access-btn control ${access === 'control' ? 'active' : ''}" onclick="setEntityAccess('${entity.entity_id}', 'control')" title="AI can call services directly">ctrl</button>`}
       </div>
       <div class="entity-info">
         <div class="entity-name">${escapeHtml(entity.friendly_name)}${domainBadge}${sensitiveIcon}${scheduleInfo ? `<span style="font-size:9px;color:var(--confirm);font-family:var(--mono);">${escapeHtml(scheduleInfo)}</span>` : ''}${hasConstraints ? '<span style="font-size:9px;color:var(--warning);" title="Has parameter constraints">⛓</span>' : ''}</div>
@@ -224,6 +226,9 @@ function renderEntityList() {
 
 function setEntityAccess(entityId, access) {
   const domain = entityId.split('.')[0];
+  if ((access === 'control' || access === 'confirm') && READ_ONLY_DOMAINS.includes(domain)) {
+    return; // Read-only domains cannot be controlled
+  }
   if ((access === 'control' || access === 'confirm') && SENSITIVE_DOMAINS.includes(domain)) {
     pendingSensitiveCallback = () => { _applyAccess(entityId, access); };
     document.getElementById('sensitive-modal-text').textContent =

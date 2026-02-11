@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.4 - Read-Only Domain UX
+
+- **Improvement**: Hide "ask" and "ctrl" buttons for read-only domains (sensor, binary_sensor, weather, sun, zone, person, device_tracker, geo_location, air_quality, image) since they have no controllable services
+- **Guard**: Programmatic block on setting confirm/control access for read-only domains
+
 ## 1.2.3 - WebSocket Fix
 
 - **Fix**: WebSocket connections crashed immediately after auth due to unhashable `set` inside a `set` container (`TypeError: unhashable type: 'set'`). Changed `_ws_clients` from `set` to `list` so real-time state streaming now works correctly.
