@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1 - Security Patch
+
+- **Fix**: Prevent domain-wide wildcard attacks -- service calls without an `entity_id` now only target explicitly allowed control entities instead of all entities in the domain
+- **Fix**: Harden IP detection to prefer socket peer IP over spoofable `X-Forwarded-For` header
+
 ## 1.1.0 - Air Gap Release
 
 - **Per-entity access control**: three-state toggle (off / read / control) for each entity
