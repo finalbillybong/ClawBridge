@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1 - Security & UI Fix
+
+- **Fix**: API key authentication now enforced on legacy `/api/ai-action` endpoint (previously bypassed entirely)
+- **Fix**: Tab content panels (settings, security, etc.) now scroll correctly
+- **Fix**: Added `Cache-Control: no-store` headers to prevent browser from serving stale cached UI
+
 ## 1.2.0 - Feature Expansion Release
 
 - **Four-state entity access**: off / read / confirm / control — confirm entities require human approval via HA notification
