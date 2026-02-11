@@ -1,6 +1,6 @@
 name: "ClawBridge"
-description: "Bidirectional air gap between AI agents and Home Assistant with per-entity access control."
-version: "1.2.1"
+description: "AI guard rail for Home Assistant with per-entity access control."
+version: "1.2.2"
 slug: "clawbridge"
 url: "https://github.com/finalbillybong/ClawBridge"
 arch:

@@ -44,6 +44,8 @@ DEFAULT_CONFIG = {
     # Confirmation settings
     "confirm_timeout_seconds": 120,
     "confirm_notify_service": "",
+    # AI display name for notifications
+    "ai_name": "AI",
 }
 
 
@@ -449,6 +451,15 @@ class ConfigManager:
     @confirm_notify_service.setter
     def confirm_notify_service(self, value):
         self._config["confirm_notify_service"] = str(value).strip()
+        self._save()
+
+    @property
+    def ai_name(self):
+        return self._config.get("ai_name", "AI")
+
+    @ai_name.setter
+    def ai_name(self, value):
+        self._config["ai_name"] = str(value)[:50].strip() if value else "AI"
         self._save()
 
     # ── Presets ────────────────────────────────────

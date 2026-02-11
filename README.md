@@ -1,6 +1,6 @@
 # ClawBridge
 
-Bidirectional air gap between AI agents and Home Assistant. Exposes only the entities you choose, with per-entity access levels and comprehensive security controls.
+AI guard rail for Home Assistant. Exposes only the entities you choose, with per-entity access levels and comprehensive security controls.
 
 ## Installation
 
@@ -15,7 +15,7 @@ Bidirectional air gap between AI agents and Home Assistant. Exposes only the ent
 
 ## What It Does
 
-- **Air gap** between your AI agent (OpenClaw) and Home Assistant
+- **Guard rail** between your AI agent (OpenClaw) and Home Assistant
 - Four-state per-entity access: **off** / **read** (AI sees state) / **confirm** (AI requests, human approves) / **control** (AI acts directly)
 - HA-compatible REST API on port 8100 -- standard HA client libraries work out of the box
 - WebSocket endpoint for real-time state change streaming
@@ -37,6 +37,16 @@ http://<your-ha-ip>:8100/api/
 ```
 
 No authentication required by default. See [OPENCLAW_API.md](clawbridge/OPENCLAW_API.md) for the full API reference.
+
+## Setting Up Your AI (OpenClaw / Custom Agent)
+
+To give your AI the ability to control Home Assistant through ClawBridge:
+
+1. **Provide the API reference** -- Give your AI the [OPENCLAW_API.md](clawbridge/OPENCLAW_API.md) file so it understands the available endpoints, authentication, access levels, and usage examples.
+2. **Generate an API key** -- In the ClawBridge UI, go to the **Security** tab and create an API key. Give this key to your AI so it can authenticate with `Authorization: Bearer <key>`.
+3. **Ask your AI to create a Home Assistant skill** -- With the API docs and key, ask your AI to build a skill/plugin that connects to ClawBridge to read entity states and call services.
+
+> **Tip:** You can scope each API key to specific entities and set per-key rate limits from the Security tab. This lets you give different agents different levels of access.
 
 ## Features
 

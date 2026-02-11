@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.2 - Smart Constraints & Branding
+
+- **Improvement**: Constraint parameter editor now only shows parameters the entity actually supports (e.g., no brightness slider for on/off-only lights)
+- **Branding**: Replaced "air gap" terminology with "guard rail" across all documentation and UI
+
 ## 1.2.1 - Security & UI Fix
 
 - **Fix**: API key authentication now enforced on legacy `/api/ai-action` endpoint (previously bypassed entirely)
@@ -25,7 +30,7 @@
 - **Fix**: Prevent domain-wide wildcard attacks -- service calls without an `entity_id` now only target explicitly allowed control entities instead of all entities in the domain
 - **Fix**: Harden IP detection to prefer socket peer IP over spoofable `X-Forwarded-For` header
 
-## 1.1.0 - Air Gap Release
+## 1.1.0 - Guard Rail Release
 
 - **Per-entity access control**: three-state toggle (off / read / control) for each entity
 - **HA-compatible REST API** on port 8100: `GET /api/states`, `GET /api/states/{id}`, `POST /api/services/{domain}/{service}`, `GET /api/services` -- standard HA client libraries work out of the box

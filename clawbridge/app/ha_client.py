@@ -42,6 +42,7 @@ class HAClient:
         self._ws_task = None
         self._ws_msg_id = 1
         self._state_change_callbacks = []
+        self._notification_action_callbacks = []
         self._ws_connected = False
 
     async def start(self):
@@ -97,13 +98,23 @@ class HAClient:
                     logger.info("WebSocket authenticated with HA")
 
                     # Subscribe to state_changed events
-                    sub_id = self._ws_msg_id
+                    state_sub_id = self._ws_msg_id
                     self._ws_msg_id += 1
                     await ws.send_json({
-                        "id": sub_id,
+                        "id": state_sub_id,
                         "type": "subscribe_events",
                         "event_type": "state_changed",
                     })
+
+                    # Subscribe to mobile_app_notification_action events
+                    notif_sub_id = self._ws_msg_id
+                    self._ws_msg_id += 1
+                    await ws.send_json({
+                        "id": notif_sub_id,
+                        "type": "subscribe_events",
+                        "event_type": "mobile_app_notification_action",
+                    })
+                    logger.info("Subscribed to state_changed and mobile_app_notification_action events")
 
                     async for raw_msg in ws:
                         if raw_msg.type == aiohttp.WSMsgType.TEXT:
@@ -114,25 +125,37 @@ class HAClient:
 
                             if data.get("type") == "event":
                                 event = data.get("event", {})
+                                event_type = event.get("event_type", "")
                                 event_data = event.get("data", {})
-                                entity_id = event_data.get("entity_id")
-                                new_state = event_data.get("new_state")
-                                old_state = event_data.get("old_state")
 
-                                if entity_id and new_state:
-                                    # Update internal state cache
-                                    if entity_id in self._states:
-                                        old_cached = self._states[entity_id]
-                                        if old_cached.get("state") != new_state.get("state"):
-                                            self._previous_states[entity_id] = old_cached.get("state")
-                                    self._states[entity_id] = new_state
+                                if event_type == "state_changed":
+                                    entity_id = event_data.get("entity_id")
+                                    new_state = event_data.get("new_state")
+                                    old_state = event_data.get("old_state")
 
-                                    # Notify callbacks
-                                    for callback in self._state_change_callbacks:
-                                        try:
-                                            await callback(entity_id, new_state, old_state)
-                                        except Exception as e:
-                                            logger.error("State change callback error: %s", e)
+                                    if entity_id and new_state:
+                                        # Update internal state cache
+                                        if entity_id in self._states:
+                                            old_cached = self._states[entity_id]
+                                            if old_cached.get("state") != new_state.get("state"):
+                                                self._previous_states[entity_id] = old_cached.get("state")
+                                        self._states[entity_id] = new_state
+
+                                        # Notify callbacks
+                                        for callback in self._state_change_callbacks:
+                                            try:
+                                                await callback(entity_id, new_state, old_state)
+                                            except Exception as e:
+                                                logger.error("State change callback error: %s", e)
+
+                                elif event_type == "mobile_app_notification_action":
+                                    action_str = event_data.get("action", "")
+                                    if action_str.startswith("CLAWBRIDGE_"):
+                                        for callback in self._notification_action_callbacks:
+                                            try:
+                                                await callback(action_str, event_data)
+                                            except Exception as e:
+                                                logger.error("Notification action callback error: %s", e)
 
                         elif raw_msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
                             break
@@ -154,6 +177,14 @@ class HAClient:
     def unsubscribe_state_changes(self, callback):
         """Unregister a state change callback."""
         self._state_change_callbacks = [cb for cb in self._state_change_callbacks if cb is not callback]
+
+    def subscribe_notification_actions(self, callback):
+        """Register a callback for notification actions: async callback(action_str, event_data)."""
+        self._notification_action_callbacks.append(callback)
+
+    def unsubscribe_notification_actions(self, callback):
+        """Unregister a notification action callback."""
+        self._notification_action_callbacks = [cb for cb in self._notification_action_callbacks if cb is not callback]
 
     @property
     def ws_connected(self):
@@ -262,6 +293,10 @@ class HAClient:
                 "device_class": attrs.get("device_class"),
                 "unit_of_measurement": attrs.get("unit_of_measurement"),
                 "icon": attrs.get("icon"),
+                "attribute_keys": [k for k in attrs.keys()
+                                   if k not in ("friendly_name", "icon",
+                                                "device_class",
+                                                "unit_of_measurement")],
             })
         for domain in domains:
             domains[domain].sort(key=lambda e: e.get("friendly_name", "").lower())

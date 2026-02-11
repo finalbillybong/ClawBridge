@@ -1,6 +1,6 @@
-# ClawBridge Documentation (v1.2.0)
+# ClawBridge Documentation (v1.2.2)
 
-ClawBridge provides a **bidirectional air gap** between AI agents (OpenClaw, etc.) and Home Assistant. Users maintain explicit control over which entities are exposed for reading and/or control, with granular access levels, human-in-the-loop confirmation, and multi-agent security.
+ClawBridge provides an **AI guard rail** between AI agents (OpenClaw, etc.) and Home Assistant. Users maintain explicit control over which entities are exposed for reading and/or control, with granular access levels, human-in-the-loop confirmation, and multi-agent security.
 
 ---
 
@@ -178,7 +178,7 @@ For entities with **confirm** access:
 
 | Feature | Description |
 |---------|-------------|
-| **Bidirectional air gap** | AI sees/calls only what you expose |
+| **AI guard rail** | AI sees/calls only what you expose |
 | **Four access levels** | Off / Read / Confirm / Control |
 | **Human-in-the-loop** | Confirm entities require HA approval |
 | **Multi-agent API keys** | Optional Bearer auth, per-key entity scoping |

@@ -158,6 +158,38 @@ CORS_HEADERS = {
 }
 
 
+def _friendly_name(entity_id):
+    """Resolve entity_id to its friendly_name from cached HA state."""
+    state = ha_client.get_ha_format_single(entity_id)
+    if state:
+        return state.get("attributes", {}).get("friendly_name", entity_id)
+    return entity_id
+
+
+async def _send_confirm_notification(action_id, domain, service, entity_id):
+    """Send an actionable notification with Approve/Deny buttons for a confirmation action."""
+    notify_service = config_mgr.confirm_notify_service
+    if not notify_service or "." not in notify_service:
+        return
+    ndomain, nservice = notify_service.split(".", 1)
+    ai = config_mgr.ai_name
+    fname = _friendly_name(entity_id)
+    try:
+        await ha_client.call_service(ndomain, nservice, {
+            "title": f"ClawBridge: {ai} Needs Approval",
+            "message": f"{ai} wants to call {service} on {fname}.",
+            "data": {
+                "tag": f"clawbridge_{action_id}",
+                "actions": [
+                    {"action": f"CLAWBRIDGE_APPROVE_{action_id}", "title": "Approve"},
+                    {"action": f"CLAWBRIDGE_DENY_{action_id}", "title": "Deny", "destructive": True},
+                ],
+            },
+        })
+    except Exception as e:
+        logger.warning("Failed to send confirmation notification: %s", e)
+
+
 # ──────────────────────────────────────────────
 # UI Routes (authenticated via ingress)
 # ──────────────────────────────────────────────
@@ -271,6 +303,7 @@ async def api_get_settings(request):
         "allowed_ips": config_mgr.allowed_ips,
         "confirm_timeout_seconds": config_mgr.confirm_timeout_seconds,
         "confirm_notify_service": config_mgr.confirm_notify_service,
+        "ai_name": config_mgr.ai_name,
     })
 
 
@@ -295,6 +328,8 @@ async def api_save_settings(request):
         config_mgr.confirm_timeout_seconds = data["confirm_timeout_seconds"]
     if "confirm_notify_service" in data:
         config_mgr.confirm_notify_service = data["confirm_notify_service"]
+    if "ai_name" in data:
+        config_mgr.ai_name = data["ai_name"]
     return web.json_response({"status": "ok"})
 
 
@@ -784,18 +819,8 @@ async def ha_api_call_service(request):
             "source_ip": ip,
         }
 
-        # Try to send HA notification
-        notify_service = config_mgr.confirm_notify_service
-        if notify_service and "." in notify_service:
-            ndomain, nservice = notify_service.split(".", 1)
-            try:
-                await ha_client.call_service(ndomain, nservice, {
-                    "title": "ClawBridge: Action Approval Required",
-                    "message": f"AI wants to call {domain}.{service} on {confirm_entities[0]}. Approve in ClawBridge UI.",
-                    "data": {"tag": f"clawbridge_{action_id}"},
-                })
-            except Exception as e:
-                logger.warning("Failed to send confirmation notification: %s", e)
+        # Send actionable notification with Approve/Deny buttons
+        await _send_confirm_notification(action_id, domain, service, confirm_entities[0])
 
         await audit_logger.log_action(
             "confirmation_requested",
@@ -1109,6 +1134,8 @@ async def api_ai_action(request):
                 "data": service_data, "timestamp": time.time(),
                 "status": "pending", "source_ip": ip,
             }
+            # Send actionable notification with Approve/Deny buttons
+            await _send_confirm_notification(action_id, domain, service, entity_id)
             return web.json_response({
                 "action_id": action_id, "status": "pending",
                 "message": f"Requires human approval. Poll GET /api/actions/{action_id}",
@@ -1190,6 +1217,54 @@ async def _cleanup_stale_data():
 
 
 # ──────────────────────────────────────────────
+# Notification Action Handler
+# ──────────────────────────────────────────────
+
+async def _handle_notification_action(action_str, event_data):
+    """Handle Approve/Deny button taps from mobile notifications."""
+    if action_str.startswith("CLAWBRIDGE_APPROVE_"):
+        action_id = action_str[len("CLAWBRIDGE_APPROVE_"):]
+        action = _pending_actions.get(action_id)
+        if not action or action["status"] != "pending":
+            logger.debug("Notification approve for unknown/resolved action: %s", action_id)
+            return
+
+        if (time.time() - action["timestamp"]) > config_mgr.confirm_timeout_seconds:
+            action["status"] = "expired"
+            logger.info("Notification approve for expired action: %s", action_id)
+            return
+
+        # Execute the service call
+        ok, result = await ha_client.call_service(action["domain"], action["service"], action["data"])
+        action["status"] = "approved"
+
+        await audit_logger.log_action(
+            "confirmed_service_call",
+            entity_id=action["entity_id"], domain=action["domain"],
+            service=action["service"], source_ip=action.get("source_ip"),
+            result="success" if ok else "error",
+            error=str(result.get("error", "")) if not ok else None,
+        )
+        logger.info("Action %s approved via notification (entity: %s)", action_id, action["entity_id"])
+
+    elif action_str.startswith("CLAWBRIDGE_DENY_"):
+        action_id = action_str[len("CLAWBRIDGE_DENY_"):]
+        action = _pending_actions.get(action_id)
+        if not action or action["status"] != "pending":
+            logger.debug("Notification deny for unknown/resolved action: %s", action_id)
+            return
+
+        action["status"] = "denied"
+        await audit_logger.log_action(
+            "denied_service_call",
+            entity_id=action["entity_id"], domain=action["domain"],
+            service=action["service"], source_ip=action.get("source_ip"),
+            result="denied",
+        )
+        logger.info("Action %s denied via notification (entity: %s)", action_id, action["entity_id"])
+
+
+# ──────────────────────────────────────────────
 # App Setup
 # ──────────────────────────────────────────────
 
@@ -1200,6 +1275,9 @@ async def on_startup(app):
 
     # Register state change broadcaster for WebSocket clients
     ha_client.subscribe_state_changes(_broadcast_state_change)
+
+    # Register notification action handler for Approve/Deny button taps
+    ha_client.subscribe_notification_actions(_handle_notification_action)
 
     app["refresh_task"] = asyncio.create_task(
         ha_client.periodic_refresh(config_mgr.refresh_interval)

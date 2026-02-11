@@ -454,17 +454,24 @@ function showConstraintsModal(entityId) {
   const existing = entityConstraints[entityId] || {};
   const editor = document.getElementById('constraints-editor');
 
-  // Common parameters based on domain
-  const domain = entityId.split('.')[0];
-  const params = [];
-  if (['light'].includes(domain)) params.push('brightness', 'color_temp');
-  if (['climate'].includes(domain)) params.push('temperature', 'target_temp_high', 'target_temp_low', 'humidity');
-  if (['fan'].includes(domain)) params.push('percentage');
-  if (['cover'].includes(domain)) params.push('position', 'tilt_position');
-  if (['number', 'input_number'].includes(domain)) params.push('value');
-  if (params.length === 0) params.push('value');
+  // Find the entity to check which attributes it actually supports
+  const entity = getAllEntitiesFlat().find(e => e.entity_id === entityId);
+  const attrKeys = entity && entity.attribute_keys ? entity.attribute_keys : [];
 
-  // Add any existing params not in defaults
+  // Candidate parameters based on domain
+  const domain = entityId.split('.')[0];
+  const candidates = [];
+  if (['light'].includes(domain)) candidates.push('brightness', 'color_temp');
+  if (['climate'].includes(domain)) candidates.push('temperature', 'target_temp_high', 'target_temp_low', 'humidity');
+  if (['fan'].includes(domain)) candidates.push('percentage');
+  if (['cover'].includes(domain)) candidates.push('position', 'tilt_position');
+  if (['number', 'input_number'].includes(domain)) candidates.push('value');
+
+  // Filter to only params the entity actually has
+  const params = candidates.filter(p => attrKeys.includes(p));
+  if (params.length === 0 && candidates.length === 0) params.push('value');
+
+  // Keep any previously saved constraints even if not in current attributes
   for (const p of Object.keys(existing)) {
     if (!params.includes(p)) params.push(p);
   }
@@ -721,6 +728,7 @@ async function loadSettings() {
     document.getElementById('setting-allowed-ips').value = (data.allowed_ips || []).join(', ');
     document.getElementById('setting-confirm-timeout').value = data.confirm_timeout_seconds || 120;
     document.getElementById('setting-confirm-notify').value = data.confirm_notify_service || '';
+    document.getElementById('setting-ai-name').value = data.ai_name || '';
   } catch (err) { console.error('Failed to load settings:', err); }
 }
 
@@ -737,6 +745,7 @@ async function saveSettings() {
     allowed_ips: ips,
     confirm_timeout_seconds: parseInt(document.getElementById('setting-confirm-timeout').value, 10),
     confirm_notify_service: document.getElementById('setting-confirm-notify').value.trim(),
+    ai_name: document.getElementById('setting-ai-name').value.trim(),
   };
   try { await apiPost('/api/settings', settings); showToast('Settings saved.'); }
   catch (err) { showToast('Failed to save settings.', true); }
