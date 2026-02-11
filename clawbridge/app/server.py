@@ -192,7 +192,7 @@ async def handle_index(request):
         f"const BASE_PATH = '{base_path}';"
     )
 
-    return web.Response(text=html, content_type="text/html")
+    return web.Response(text=html, content_type="text/html", headers={"Cache-Control": "no-store"})
 
 
 async def handle_static(request):
@@ -221,6 +221,7 @@ async def handle_static(request):
         body=content if isinstance(content, bytes) else None,
         text=content if isinstance(content, str) else None,
         content_type=content_type,
+        headers={"Cache-Control": "no-store"},
     )
 
 
@@ -1054,6 +1055,12 @@ async def api_ai_action(request):
     if not _check_rate_limit(ip):
         return web.json_response({"error": "Rate limit exceeded"}, status=429, headers=CORS_HEADERS)
 
+    key_id, key_config = _check_api_key(request)
+    if key_id is None:
+        return web.json_response({"error": "Invalid API key"}, status=401, headers=CORS_HEADERS)
+
+    effective = _get_effective_entities(key_config)
+
     try:
         body = await request.json()
     except Exception as e:
@@ -1068,9 +1075,9 @@ async def api_ai_action(request):
     extra_data = body.get("data") or body.get("service_data") or {}
     start_time = time.time()
 
-    # Validate entity access level
+    # Validate entity access level (using per-key effective entities)
     if entity_id:
-        access = config_mgr.is_entity_exposed(entity_id)
+        access = effective.get(entity_id, False)
         if not access:
             await audit_logger.log_action(
                 "service_call", entity_id=entity_id, domain=domain, service=service,
@@ -1107,10 +1114,10 @@ async def api_ai_action(request):
                 "message": f"Requires human approval. Poll GET /api/actions/{action_id}",
             }, status=202, headers=CORS_HEADERS)
     else:
-        # No entity_id: inject allowed control entities
+        # No entity_id: inject allowed control entities (scoped to API key)
         control_entities_in_domain = [
-            eid for eid in config_mgr.get_control_entity_ids()
-            if eid.startswith(domain + ".")
+            eid for eid, acc in effective.items()
+            if acc in ("control", "confirm") and eid.startswith(domain + ".")
         ]
         if not control_entities_in_domain:
             await audit_logger.log_action(
