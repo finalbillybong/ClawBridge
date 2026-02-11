@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.3 - WebSocket Fix
+
+- **Fix**: WebSocket connections crashed immediately after auth due to unhashable `set` inside a `set` container (`TypeError: unhashable type: 'set'`). Changed `_ws_clients` from `set` to `list` so real-time state streaming now works correctly.
+
 ## 1.2.2 - Smart Constraints & Branding
 
 - **Improvement**: Constraint parameter editor now only shows parameters the entity actually supports (e.g., no brightness slider for on/off-only lights)

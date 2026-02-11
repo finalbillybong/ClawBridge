@@ -41,8 +41,8 @@ _rate_buckets = {}  # ip -> { tokens, last_refill }
 # Pending confirmation actions: { action_id: { domain, service, entity_id, data, timestamp, status, source_ip } }
 _pending_actions = {}
 
-# WebSocket clients: set of (ws, subscribed_entity_ids_or_None)
-_ws_clients = set()
+# WebSocket clients: list of (ws, subscribed_entity_ids_set)
+_ws_clients = []
 
 
 async def fetch_ingress_url():
@@ -987,7 +987,7 @@ async def ha_api_websocket(request):
 
     # Register client
     client_entry = (ws, subscribed_ids)
-    _ws_clients.add(client_entry)
+    _ws_clients.append(client_entry)
 
     try:
         async for raw_msg in ws:
@@ -1009,7 +1009,10 @@ async def ha_api_websocket(request):
             elif raw_msg.type in (aiohttp_client.WSMsgType.CLOSED, aiohttp_client.WSMsgType.ERROR):
                 break
     finally:
-        _ws_clients.discard(client_entry)
+        try:
+            _ws_clients.remove(client_entry)
+        except ValueError:
+            pass
 
     return ws
 
@@ -1026,16 +1029,20 @@ async def _broadcast_state_change(entity_id, new_state, old_state):
         "old_state": old_state,
     })
 
-    dead_clients = set()
-    for ws, subscribed_ids in _ws_clients:
+    dead_clients = []
+    for client in _ws_clients:
+        ws, subscribed_ids = client
         if entity_id in subscribed_ids:
             try:
                 await ws.send_str(message)
             except Exception:
-                dead_clients.add((ws, subscribed_ids))
+                dead_clients.append(client)
 
     for client in dead_clients:
-        _ws_clients.discard(client)
+        try:
+            _ws_clients.remove(client)
+        except ValueError:
+            pass
 
 
 # ──────────────────────────────────────────────
