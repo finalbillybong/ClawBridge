@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.0 - Light Mode & AI Chat
+
+- **Light mode**: Toggle between dark and light themes via the sun/moon button in the sidebar header; preference saved in localStorage
+- **AI Chat tab**: Talk directly to your AI from the ClawBridge UI with real-time streaming responses
+  - Streaming SSE proxy to OpenClaw Gateway `/v1/chat/completions`
+  - Server-side chat history persistence (capped at 200 messages)
+  - Markdown rendering (code blocks, inline code, bold, italic)
+  - New conversation / clear history button
+  - Mobile-friendly full-height chat layout
+- **Gateway settings**: Configure Gateway URL and auth token in the Settings tab with a connection test button
+- **New endpoints**: `POST /api/chat`, `GET/POST/DELETE /api/chat/history`, `GET /api/chat/status` (all on authenticated ingress port)
+
 ## 1.2.5 - Mobile Responsive UI
 
 - **Mobile layout**: Full responsive redesign for phones and tablets

@@ -304,6 +304,8 @@ async def api_get_settings(request):
         "confirm_timeout_seconds": config_mgr.confirm_timeout_seconds,
         "confirm_notify_service": config_mgr.confirm_notify_service,
         "ai_name": config_mgr.ai_name,
+        "gateway_url": config_mgr.gateway_url,
+        "gateway_token": config_mgr.gateway_token,
     })
 
 
@@ -330,6 +332,10 @@ async def api_save_settings(request):
         config_mgr.confirm_notify_service = data["confirm_notify_service"]
     if "ai_name" in data:
         config_mgr.ai_name = data["ai_name"]
+    if "gateway_url" in data:
+        config_mgr.gateway_url = data["gateway_url"]
+    if "gateway_token" in data:
+        config_mgr.gateway_token = data["gateway_token"]
     return web.json_response({"status": "ok"})
 
 
@@ -1272,6 +1278,130 @@ async def _handle_notification_action(action_str, event_data):
 
 
 # ──────────────────────────────────────────────
+# Chat / AI Gateway Proxy
+# ──────────────────────────────────────────────
+
+async def api_chat(request):
+    """Streaming SSE proxy to OpenClaw Gateway /v1/chat/completions."""
+    gateway_url = config_mgr.gateway_url
+    gateway_token = config_mgr.gateway_token
+    if not gateway_url:
+        return web.json_response({"error": "Gateway URL not configured"}, status=400)
+
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+
+    user_message = data.get("message", "").strip()
+    history = data.get("history", [])
+    if not user_message:
+        return web.json_response({"error": "Empty message"}, status=400)
+
+    # Build OpenAI-format messages (last 6 turns + new)
+    messages = []
+    for msg in history[-12:]:  # last 6 turns (user+assistant each)
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if role in ("user", "assistant", "system") and content:
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": user_message})
+
+    # Prepare gateway request
+    url = gateway_url.rstrip("/") + "/v1/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if gateway_token:
+        headers["Authorization"] = f"Bearer {gateway_token}"
+
+    payload = {
+        "messages": messages,
+        "stream": True,
+    }
+
+    # Start SSE response
+    response = web.StreamResponse(
+        status=200,
+        reason="OK",
+        headers={
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+    await response.prepare(request)
+
+    try:
+        timeout = aiohttp_client.ClientTimeout(total=120)
+        async with aiohttp_client.ClientSession(timeout=timeout) as session:
+            async with session.post(url, json=payload, headers=headers) as upstream:
+                if upstream.status != 200:
+                    error_text = await upstream.text()
+                    await response.write(f"data: {json.dumps({'error': error_text})}\n\n".encode())
+                    await response.write(b"data: [DONE]\n\n")
+                    return response
+
+                async for line in upstream.content:
+                    decoded = line.decode("utf-8", errors="replace").strip()
+                    if not decoded:
+                        continue
+                    if decoded.startswith("data: "):
+                        chunk_data = decoded[6:]
+                        if chunk_data == "[DONE]":
+                            await response.write(b"data: [DONE]\n\n")
+                            break
+                        try:
+                            chunk = json.loads(chunk_data)
+                            delta = chunk.get("choices", [{}])[0].get("delta", {})
+                            content = delta.get("content", "")
+                            if content:
+                                await response.write(f"data: {json.dumps({'content': content})}\n\n".encode())
+                        except (json.JSONDecodeError, IndexError, KeyError):
+                            pass
+    except asyncio.TimeoutError:
+        await response.write(f"data: {json.dumps({'error': 'Gateway timeout'})}\n\n".encode())
+        await response.write(b"data: [DONE]\n\n")
+    except Exception as e:
+        logger.error("Chat proxy error: %s", e)
+        await response.write(f"data: {json.dumps({'error': str(e)})}\n\n".encode())
+        await response.write(b"data: [DONE]\n\n")
+
+    return response
+
+
+async def api_chat_history_get(request):
+    """Return stored chat history."""
+    return web.json_response({"history": config_mgr.chat_history})
+
+
+async def api_chat_history_save(request):
+    """Save chat history (capped at 200)."""
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+    history = data.get("history", [])
+    if not isinstance(history, list):
+        return web.json_response({"error": "history must be an array"}, status=400)
+    config_mgr.chat_history = history
+    return web.json_response({"status": "ok", "count": len(config_mgr.chat_history)})
+
+
+async def api_chat_history_clear(request):
+    """Clear chat history."""
+    config_mgr.chat_history = []
+    return web.json_response({"status": "ok"})
+
+
+async def api_chat_status(request):
+    """Return whether gateway is configured."""
+    return web.json_response({
+        "configured": bool(config_mgr.gateway_url),
+        "has_token": bool(config_mgr.gateway_token),
+    })
+
+
+# ──────────────────────────────────────────────
 # App Setup
 # ──────────────────────────────────────────────
 
@@ -1357,6 +1487,13 @@ def create_ingress_app():
     app.router.add_get("/api/audit/logs", api_get_audit_logs)
     app.router.add_delete("/api/audit/logs", api_clear_audit_logs)
     app.router.add_get("/api/stats", api_get_stats)
+
+    # Chat / AI Gateway
+    app.router.add_post("/api/chat", api_chat)
+    app.router.add_get("/api/chat/history", api_chat_history_get)
+    app.router.add_post("/api/chat/history", api_chat_history_save)
+    app.router.add_delete("/api/chat/history", api_chat_history_clear)
+    app.router.add_get("/api/chat/status", api_chat_status)
 
     # Also serve AI endpoints on ingress for testing
     app.router.add_get("/api/ai-sensors", api_ai_sensors)
