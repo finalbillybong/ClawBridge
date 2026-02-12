@@ -47,6 +47,18 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+// ─── Mobile Sidebar ─────────────────────────────
+
+function toggleSidebar() {
+  document.querySelector('.sidebar').classList.toggle('open');
+  document.getElementById('sidebar-backdrop').classList.toggle('show');
+}
+
+function closeSidebar() {
+  document.querySelector('.sidebar').classList.remove('open');
+  document.getElementById('sidebar-backdrop').classList.remove('show');
+}
+
 // ─── API Helpers ───────────────────────────────
 
 async function apiGet(path) {
@@ -147,6 +159,11 @@ function selectDomain(domain) {
   const label = domain === '__exposed__' ? 'Exposed Entities' : domain === '__all__' ? 'All Entities' : domain;
   document.getElementById('status-domain').textContent = `${icon} ${label}`;
   renderEntityList();
+  closeSidebar();
+  // Auto-switch to entities tab on mobile when selecting a domain
+  if (window.innerWidth <= 768 && currentTab !== 'entities') {
+    switchTab('entities');
+  }
 }
 
 // ─── Render Entity List (four-state toggle) ────
@@ -334,6 +351,7 @@ async function saveSelection() {
   try {
     await apiPost('/api/selection', { exposed_entities: exposedEntities });
     showToast(`Saved! ${Object.keys(exposedEntities).length} entities (${countByAccess('read')} read, ${countByAccess('confirm')} confirm, ${countByAccess('control')} control).`);
+    closeSidebar();
   } catch (err) { showToast('Failed to save.', true); console.error(err); }
   btn.disabled = false;
   btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save`;

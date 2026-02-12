@@ -670,14 +670,147 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--bg-4); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
 
-/* ─── Responsive ────────────────────────────── */
+/* ─── Hamburger (hidden on desktop) ──────────── */
+
+.hamburger {
+  display: none; /* shown via media query */
+  align-items: center; justify-content: center;
+  padding: 8px; border: none; background: transparent;
+  color: var(--text-2); cursor: pointer; flex-shrink: 0;
+  border-radius: var(--radius-xs); transition: all var(--transition);
+}
+.hamburger:hover { color: var(--text-0); background: var(--bg-3); }
+
+/* ─── Sidebar Backdrop (hidden on desktop) ───── */
+
+.sidebar-backdrop {
+  display: none; /* shown via media query */
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5);
+  z-index: 199; opacity: 0; visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+.sidebar-backdrop.show { opacity: 1; visibility: visible; }
+
+/* ─── Responsive: Tablet (<=768px) ───────────── */
 
 @media (max-width: 768px) {
-  .sidebar { width: 200px; min-width: 200px; }
-  .toolbar { padding: 10px 14px; }
+  /* Hamburger visible */
+  .hamburger { display: flex; }
+
+  /* Sidebar as overlay */
+  .sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0;
+    width: 280px; min-width: 280px;
+    z-index: 200;
+    transform: translateX(-100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .sidebar.open { transform: translateX(0); }
+
+  /* Backdrop visible on mobile */
+  .sidebar-backdrop { display: block; }
+
+  /* App layout: no flex sidebar, main takes full width */
+  .app { display: flex; flex-direction: column; }
+  .main { width: 100%; }
+
+  /* Toolbar adjustments */
+  .toolbar { padding: 10px 14px; gap: 6px; }
+  .search-box { min-width: 0; width: 100%; flex-basis: 100%; }
+
+  /* Entity list padding */
   .entity-list { padding: 10px 14px; }
+
+  /* Entity cards: stack vertically */
+  .entity-card { flex-wrap: wrap; padding: 10px 12px; gap: 8px; }
+
+  .entity-access-toggle {
+    width: 100%; order: -1; margin-right: 0; margin-bottom: 0;
+    justify-content: stretch;
+  }
+  .access-btn {
+    flex: 1; text-align: center;
+    padding: 8px 6px; font-size: 11px;
+    min-height: 36px;
+  }
+
+  .entity-info { width: calc(100% - 80px); min-width: 0; }
+
+  /* Entity actions always visible on touch */
+  .entity-actions { opacity: 1; }
+  .entity-action-btn { padding: 8px; }
+
+  .entity-state { margin-left: auto; }
+
+  /* Tabs: icon only */
+  .tabs { padding: 0 8px; gap: 0; }
+  .tab {
+    padding: 12px 10px; font-size: 0; gap: 0; flex: 1; justify-content: center;
+    min-height: 44px;
+  }
+  .tab svg { width: 18px; height: 18px; }
+
+  /* Dashboard */
   .dashboard { padding: 12px; }
-  .dash-grid { grid-template-columns: repeat(2, 1fr); }
+  .dash-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .dash-card .dash-value { font-size: 22px; }
+
+  /* Settings: stack rows */
+  .settings-panel { padding: 12px 14px; }
+  .setting-row { flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px; }
+  .setting-row > div { width: 100%; }
+  .text-input { width: 100% !important; }
+  .number-input { width: 100%; }
+  .settings-actions { flex-wrap: wrap; }
+
+  /* Security panels */
+  .security-panels { padding: 12px 14px; }
+
+  /* Status dock: simplified */
+  .status-dock { padding: 0 12px; height: 32px; font-size: 10px; }
+  .dock-left { display: none; }
+  .dock-right { display: none; }
+  .dock-center { flex: 1; justify-content: center; }
+
+  /* Modals */
+  .modal { padding: 20px; width: 95vw; max-height: 85vh; overflow-y: auto; }
+
+  /* Audit table */
+  .audit-list { padding: 8px 10px; }
+  .audit-table { font-size: 9px; }
+  .audit-table thead th { padding: 8px 6px; font-size: 8px; }
+  .audit-table tbody td { padding: 6px; }
+}
+
+/* ─── Responsive: Phone (<=480px) ────────────── */
+
+@media (max-width: 480px) {
+  /* Even more compact entity cards */
+  .entity-card { padding: 8px 10px; }
+  .access-btn { padding: 10px 4px; font-size: 10px; min-height: 40px; }
+
+  /* Buttons larger for tap */
+  .btn { padding: 10px 14px; font-size: 11px; min-height: 40px; }
+  .btn-sm { padding: 8px 12px; font-size: 10px; min-height: 36px; }
+
+  /* Dashboard grid single column */
+  .dash-grid { grid-template-columns: 1fr; }
+  .dash-card .dash-value { font-size: 20px; }
+
+  /* Endpoint list compact */
+  .endpoint-item { padding: 6px 8px; font-size: 10px; }
+  .endpoint-item code { font-size: 10px; word-break: break-all; }
+
+  /* Schedule days wrap tighter */
+  .schedule-days { gap: 4px; font-size: 10px; }
+  .schedule-time-row { flex-direction: column; gap: 8px; }
+
+  /* Status dock even more minimal */
+  .status-dock { height: 28px; }
+  .dock-pill { font-size: 9px; padding: 1px 6px; }
+
+  /* Toast positioning */
+  .toast { bottom: 40px; right: 10px; left: 10px; text-align: center; }
 }
 
 /* ─── Loading ───────────────────────────────── */

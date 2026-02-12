@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.5 - Mobile Responsive UI
+
+- **Mobile layout**: Full responsive redesign for phones and tablets
+- **Collapsible sidebar**: Hamburger menu toggles sidebar as slide-in overlay on mobile, closes on domain select and save
+- **Stacked entity cards**: Access toggle moves to full-width row above entity info on narrow screens
+- **Larger tap targets**: All buttons, access toggles, and tabs meet 44px minimum touch target guidelines
+- **Icon-only tabs**: Tab labels hidden on mobile, icons enlarged for easy navigation
+- **Full-width settings**: Input fields and setting rows stack vertically on mobile
+- **Simplified status dock**: Shows only read/confirm/control counts on mobile
+- **Touch-friendly actions**: Entity action buttons (annotate, constraints) always visible on touch devices
+- **Scrollable modals**: Modals cap at 85vh with scroll for tall content on short screens
+
 ## 1.2.4 - Read-Only Domain UX
 
 - **Improvement**: Hide "ask" and "ctrl" buttons for read-only domains (sensor, binary_sensor, weather, sun, zone, person, device_tracker, geo_location, air_quality, image) since they have no controllable services
