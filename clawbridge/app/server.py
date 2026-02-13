@@ -735,6 +735,13 @@ async def ha_api_call_service(request):
     elif isinstance(raw_entity, list):
         entity_ids = [e for e in raw_entity if isinstance(e, str)]
 
+    # Read-safe services: these only return data and don't modify state,
+    # so they are allowed for entities with "read" (or higher) access.
+    READ_SAFE_SERVICES = {
+        ("todo", "get_items"),
+    }
+    is_read_safe = (domain, service) in READ_SAFE_SERVICES
+
     # Validate each entity against allowlist
     for eid in entity_ids:
         access = effective.get(eid, False)
@@ -746,7 +753,7 @@ async def ha_api_call_service(request):
             return web.json_response(
                 {"message": f"Entity not exposed: {eid}"}, status=403, headers=CORS_HEADERS
             )
-        if access == "read":
+        if access == "read" and not is_read_safe:
             await audit_logger.log_action(
                 "service_call", entity_id=eid, domain=domain, service=service,
                 source_ip=ip, result="denied", error="read_only_entity",
@@ -777,6 +784,30 @@ async def ha_api_call_service(request):
             )
         body["entity_id"] = control_entities_in_domain if len(control_entities_in_domain) > 1 else control_entities_in_domain[0]
         entity_ids = control_entities_in_domain
+
+    # Read-safe services skip schedule, constraint, and confirmation checks
+    if is_read_safe:
+        # Ensure return_response is set so HA returns the actual data
+        body["return_response"] = True
+        ok, result = await ha_client.call_service(domain, service, body)
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        if ok:
+            await audit_logger.log_action(
+                "service_call", entity_id=entity_ids[0] if entity_ids else None,
+                domain=domain, service=service,
+                source_ip=ip, result="success", response_time_ms=elapsed_ms,
+            )
+            return web.json_response(result, headers=CORS_HEADERS)
+        else:
+            await audit_logger.log_action(
+                "service_call", entity_id=entity_ids[0] if entity_ids else None,
+                domain=domain, service=service,
+                source_ip=ip, result="error", error=str(result.get("error", "")),
+                response_time_ms=elapsed_ms,
+            )
+            return web.json_response(
+                {"message": result.get("error", "Service call failed")}, status=502, headers=CORS_HEADERS
+            )
 
     # Check schedule restrictions
     for eid in entity_ids:

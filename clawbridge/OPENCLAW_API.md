@@ -311,12 +311,34 @@ asyncio.run(watch_states())
 
 ### Managing To-Do Lists
 
+**Reading to-do list items** — Works even with `read` access. ClawBridge automatically sets `return_response: true` so the full item list is returned:
+
 ```python
 import requests
 
 BASE_URL = "http://localhost:8100"
 HEADERS = {"Authorization": "Bearer cb_xxxx", "Content-Type": "application/json"}
 
+# Get all items from a to-do list (works with read, confirm, or control access)
+resp = requests.post(
+    f"{BASE_URL}/api/services/todo/get_items",
+    headers=HEADERS,
+    json={"entity_id": "todo.shopping_list"}
+)
+# Response contains:
+# {
+#   "todo.shopping_list": {
+#     "items": [
+#       {"summary": "Milk", "status": "needs_action", "uid": "..."},
+#       {"summary": "Bread", "status": "completed", "uid": "..."}
+#     ]
+#   }
+# }
+```
+
+**Modifying to-do list items** — Requires `confirm` or `control` access:
+
+```python
 # Add item to a to-do list
 resp = requests.post(
     f"{BASE_URL}/api/services/todo/add_item",

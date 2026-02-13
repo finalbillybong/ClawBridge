@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.1 - To-Do List Item Access
+
+- **Feature**: AI can now read individual to-do list items (names, statuses) via `todo.get_items`, not just the item count
+- **Improvement**: Added read-safe service allowlist — `todo.get_items` works even with `read` access since it only returns data
+- **Improvement**: ClawBridge automatically injects `return_response: true` for read-safe services so HA returns the full item data
+- **Docs**: Updated `OPENCLAW_API.md` with `todo.get_items` usage example and response format
+
 ## 1.3.0 - Light Mode & AI Chat
 
 - **Light mode**: Toggle between dark and light themes via the sun/moon button in the sidebar header; preference saved in localStorage
