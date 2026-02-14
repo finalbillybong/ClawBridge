@@ -602,7 +602,7 @@ async def ha_api_config(request):
     """GET /api/config - HA compatibility: minimal mock config."""
     return web.json_response({
         "components": list(config_mgr.get_control_domains()),
-        "version": "clawbridge-1.2.0",
+        "version": "clawbridge-1.4.0",
         "location_name": "ClawBridge",
     }, headers=CORS_HEADERS)
 
@@ -978,6 +978,90 @@ async def ha_api_history(request):
 
     history = await ha_client.get_history(timestamp, entity_ids, end_time)
     return web.json_response(history, headers=CORS_HEADERS)
+
+
+# ── Context endpoint (public) ────────────────
+
+async def ha_api_context(request):
+    """GET /api/context - Give AI a complete summary of its permissions and capabilities."""
+    ip = _get_client_ip(request)
+    if not _check_ip_allowlist(ip):
+        return web.json_response({"message": "IP not allowed"}, status=403, headers=CORS_HEADERS)
+
+    key_id, key_config = _check_api_key(request)
+    if key_id is None:
+        return web.json_response({"message": "Invalid API key"}, status=401, headers=CORS_HEADERS)
+
+    effective = _get_effective_entities(key_config)
+
+    # Bucket entities by access level
+    read_entities = sorted(eid for eid, lvl in effective.items() if lvl == "read")
+    confirm_entities = sorted(eid for eid, lvl in effective.items() if lvl == "confirm")
+    control_entities = sorted(eid for eid, lvl in effective.items() if lvl == "control")
+
+    total = len(effective)
+    summary = (
+        f"You have access to {total} entities: "
+        f"{len(read_entities)} read-only, "
+        f"{len(confirm_entities)} require confirmation, "
+        f"{len(control_entities)} controllable."
+    )
+
+    # Annotations for exposed entities only
+    all_annotations = config_mgr.entity_annotations
+    annotations = {eid: ann for eid, ann in all_annotations.items() if eid in effective and ann}
+
+    # Constraints for exposed entities only
+    all_constraints = config_mgr.entity_constraints
+    constraints = {eid: con for eid, con in all_constraints.items() if eid in effective and con}
+
+    # Schedules for exposed entities only
+    all_entity_schedules = config_mgr.entity_schedules
+    all_schedules = config_mgr.schedules
+    schedules = {}
+    for eid, sched_id in all_entity_schedules.items():
+        if eid in effective and sched_id in all_schedules:
+            schedules[eid] = all_schedules[sched_id]
+
+    # Available services: unique domain.service for domains with control/confirm entities
+    actionable_domains = set()
+    for eid, lvl in effective.items():
+        if lvl in ("control", "confirm") and "." in eid:
+            actionable_domains.add(eid.split(".")[0])
+
+    available_services = []
+    if actionable_domains:
+        try:
+            ok, all_services = await ha_client.get_services()
+            if ok and isinstance(all_services, dict):
+                for domain, services in all_services.items():
+                    if domain in actionable_domains and isinstance(services, dict):
+                        for svc_name in sorted(services.keys()):
+                            available_services.append(f"{domain}.{svc_name}")
+        except Exception:
+            pass
+
+    limitations = [
+        "Entities listed under 'read' can only be observed. Service calls will be rejected.",
+        "Entities listed under 'confirm' require human approval. Service calls return 202 and are queued.",
+        "Parameter constraints are enforced server-side. Values outside min/max are auto-clamped.",
+        "Entities with time schedules can only be controlled during the listed hours and days.",
+        "Rate limiting is active. Exceeding the limit returns 429.",
+    ]
+
+    return web.json_response({
+        "summary": summary,
+        "entities": {
+            "read": read_entities,
+            "confirm": confirm_entities,
+            "control": control_entities,
+        },
+        "annotations": annotations,
+        "constraints": constraints,
+        "schedules": schedules,
+        "available_services": available_services,
+        "limitations": limitations,
+    }, headers=CORS_HEADERS)
 
 
 # ── WebSocket endpoint (public) ──────────────
@@ -1545,6 +1629,7 @@ def create_public_app():
     app.router.add_post("/api/services/{domain}/{service}", ha_api_call_service)
 
     # Extended endpoints
+    app.router.add_get("/api/context", ha_api_context)
     app.router.add_get("/api/constraints", ha_api_get_constraints)
     app.router.add_get("/api/history/period/{timestamp}", ha_api_history)
     app.router.add_get("/api/actions/{action_id}", ha_api_action_status)

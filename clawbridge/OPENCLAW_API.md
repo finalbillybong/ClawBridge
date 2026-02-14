@@ -179,7 +179,45 @@ WebSocket endpoint for real-time state changes.
 
 ---
 
-### 11. Legacy Endpoints
+### 11. AI Context (Start Here)
+
+**GET** `/api/context`
+
+Returns a complete summary of your permissions and capabilities in a single call. **Call this first** to understand what you can see and control.
+
+**Response:**
+```json
+{
+  "summary": "You have access to 12 entities: 5 read-only, 2 require confirmation, 5 controllable.",
+  "entities": {
+    "read": ["sensor.temperature", "sensor.humidity", "..."],
+    "confirm": ["cover.garage", "lock.front_door"],
+    "control": ["light.office", "light.bedroom", "switch.heater", "..."]
+  },
+  "annotations": {
+    "light.office": "Main office ceiling light, dims at sunset",
+    "cover.garage": "Double garage door - opens slowly"
+  },
+  "constraints": {
+    "light.office": {"brightness": {"min": 1, "max": 200}}
+  },
+  "schedules": {
+    "switch.heater": {"name": "Business Hours", "start": "09:00", "end": "17:00", "days": ["mon","tue","wed","thu","fri"]}
+  },
+  "available_services": ["light.turn_on", "light.turn_off", "light.toggle", "switch.turn_on", "switch.turn_off", "cover.open_cover", "cover.close_cover", "lock.lock", "lock.unlock"],
+  "limitations": [
+    "Entities listed under 'read' can only be observed. Service calls will be rejected.",
+    "Entities listed under 'confirm' require human approval. Service calls return 202 and are queued.",
+    "Parameter constraints are enforced server-side. Values outside min/max are auto-clamped.",
+    "Entities with time schedules can only be controlled during the listed hours and days.",
+    "Rate limiting is active. Exceeding the limit returns 429."
+  ]
+}
+```
+
+---
+
+### 12. Legacy Endpoints
 
 **GET** `/api/ai-sensors`
 
@@ -418,5 +456,6 @@ if resp.status_code == 200:
 | GET | `/api/history/period/{timestamp}` | History (filtered) |
 | GET | `/api/actions/{action_id}` | Poll confirmation status |
 | GET | `/api/websocket` | WebSocket real-time updates |
+| GET | `/api/context` | **Full permissions + capabilities summary (start here)** |
 | GET | `/api/ai-sensors` | Legacy sensor format |
 | POST | `/api/ai-action` | Legacy action format |

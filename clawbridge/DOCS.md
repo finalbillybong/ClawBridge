@@ -1,4 +1,4 @@
-# ClawBridge Documentation (v1.3.0)
+# ClawBridge Documentation (v1.4.0)
 
 ClawBridge provides an **AI guard rail** between AI agents (OpenClaw, etc.) and Home Assistant. Users maintain explicit control over which entities are exposed for reading and/or control, with granular access levels, human-in-the-loop confirmation, and multi-agent security.
 
@@ -57,6 +57,7 @@ All other domains (including `light`, `switch`, `climate`, `todo`, `calendar`, `
 | `GET` | `/api/states/{entity_id}` | Single entity state (404 if not exposed) |
 | `GET` | `/api/services` | Services for domains with control or confirm entities |
 | `POST` | `/api/services/{domain}/{service}` | Call a service (control = immediate; confirm = 202 queued) |
+| `GET` | `/api/context` | Full AI context: permissions, entities, annotations, constraints, schedules, services |
 | `GET` | `/api/history/period` | State history (proxy HA history API, filtered to exposed entities) |
 
 ### Legacy Endpoints
@@ -71,6 +72,12 @@ All other domains (including `light`, `switch`, `climate`, `todo`, `calendar`, `
 | Endpoint | Description |
 |----------|-------------|
 | `WS /api/websocket` | Real-time state streaming. State changes for exposed entities are pushed to connected AI clients. |
+
+---
+
+## AI Context Endpoint
+
+`GET /api/context` returns everything the AI needs in a single call: a summary of its permissions, entities grouped by access level, user-written annotations, parameter constraints, active time schedules, available services, and human-readable limitations. This is the **recommended first call** for any AI agent to understand its current capabilities before taking action.
 
 ---
 

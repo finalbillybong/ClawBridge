@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.0 - AI Context Endpoint
+
+- **Feature**: New `GET /api/context` endpoint returns a complete summary of the AI's permissions, exposed entities (grouped by access level), annotations, parameter constraints, time schedules, available services, and human-readable limitations -- all in a single call
+- **Token-efficient**: Designed for the "hybrid approach" -- static rules live in OPENCLAW_API.md (ingested once), dynamic context (current entities, constraints, schedules) comes from this endpoint
+
 ## 1.3.2 - To-Do List Item Access Fix
 
 - **Fix**: `todo.get_items` now works correctly — HA requires `return_response` as a URL query parameter (`?return_response`), not in the JSON body. Previous version returned HTTP 400.
