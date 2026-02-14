@@ -787,9 +787,8 @@ async def ha_api_call_service(request):
 
     # Read-safe services skip schedule, constraint, and confirmation checks
     if is_read_safe:
-        # Ensure return_response is set so HA returns the actual data
-        body["return_response"] = True
-        ok, result = await ha_client.call_service(domain, service, body)
+        # Pass return_response as query parameter so HA returns the actual data
+        ok, result = await ha_client.call_service(domain, service, body, return_response=True)
         elapsed_ms = int((time.time() - start_time) * 1000)
         if ok:
             await audit_logger.log_action(

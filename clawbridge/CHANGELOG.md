@@ -1,10 +1,14 @@
 # Changelog
 
+## 1.3.2 - To-Do List Item Access Fix
+
+- **Fix**: `todo.get_items` now works correctly — HA requires `return_response` as a URL query parameter (`?return_response`), not in the JSON body. Previous version returned HTTP 400.
+- **Fix**: `ha_client.call_service()` now accepts a `return_response` flag to append `?return_response` to the HA API URL
+
 ## 1.3.1 - To-Do List Item Access
 
 - **Feature**: AI can now read individual to-do list items (names, statuses) via `todo.get_items`, not just the item count
 - **Improvement**: Added read-safe service allowlist — `todo.get_items` works even with `read` access since it only returns data
-- **Improvement**: ClawBridge automatically injects `return_response: true` for read-safe services so HA returns the full item data
 - **Docs**: Updated `OPENCLAW_API.md` with `todo.get_items` usage example and response format
 
 ## 1.3.0 - Light Mode & AI Chat

@@ -424,10 +424,18 @@ class HAClient:
             logger.warning("Failed to fetch services: %s", e)
         return {}
 
-    async def call_service(self, domain, service, service_data):
-        """Call a Home Assistant service. service_data is the JSON body (e.g. entity_id, etc.)."""
+    async def call_service(self, domain, service, service_data, return_response=False):
+        """Call a Home Assistant service. service_data is the JSON body (e.g. entity_id, etc.).
+
+        If return_response is True, appends ?return_response to the URL so HA
+        returns the service response data (required for services like todo.get_items).
+        """
         try:
             url = f"{HA_URL}/api/services/{domain}/{service}"
+            if return_response:
+                url += "?return_response"
+                # Remove return_response from body if present (it's a query param, not body param)
+                service_data = {k: v for k, v in service_data.items() if k != "return_response"}
             async with self._session.post(url, json=service_data) as resp:
                 if resp.status in (200, 201):
                     return True, await resp.json()
