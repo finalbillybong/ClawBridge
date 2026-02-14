@@ -26,6 +26,7 @@ AI guard rail for Home Assistant. Exposes only the entities you choose, with per
 - Human-in-the-loop confirmation with actionable Approve/Deny push notifications (iOS + Android)
 - Customisable AI name in notifications (e.g., "OpenClaw wants to turn on Office Light")
 - Smart read-only domain detection (sensors, binary sensors, etc. only get off/read)
+- To-do list item access (AI can read item names, not just counts, via `todo.get_items`)
 - State history endpoint for AI pattern recognition
 - Audit logging and usage dashboard
 - Rate limiting and IP allowlist
@@ -69,12 +70,13 @@ To give your AI the ability to control Home Assistant through ClawBridge:
 - Named presets with import/export
 - Sensitive domain warnings (lock, cover, alarm, climate, valve)
 - Read-only domain filtering (sensor, binary_sensor, weather, etc.)
+- To-do list support: read items, add, update, and remove via `todo.*` services
 - Smart constraint editor (only shows parameters the entity supports)
 
 ## Security
 
 - Only explicitly exposed entities are visible to AI
-- Read-only entities cannot be controlled (403)
+- Read-only entities cannot be controlled (403), but can use read-safe services like `todo.get_items`
 - Confirm entities require human approval via phone notification (Approve/Deny buttons)
 - Parameter constraints prevent extreme AI actions
 - Time schedules restrict when AI can act
