@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.2 - Sidebar Icon Fix
+
+- **Fix**: Sidebar icon was blank — `mdi:crab` does not exist in MDI. Changed to `mdi:zodiac-cancer` (crab symbol)
+
 ## 1.4.1 - Unified Branding
 
 - **Branding**: New lobster claw + bridge logo applied consistently across all touchpoints
