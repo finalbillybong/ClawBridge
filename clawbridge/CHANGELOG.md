@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.1 - Unified Branding
+
+- **Branding**: New lobster claw + bridge logo applied consistently across all touchpoints
+- **Web UI**: Two-tone sidebar icon (coral claw, blue bridge) replaces old abstract bridge SVG
+- **Add-on store**: New `icon.png` (128x128) and `logo.png` with matching claw+bridge design
+- **Favicon**: SVG favicon added to browser tab using the same two-tone mark
+- **Sidebar**: Changed `panel_icon` from `mdi:bridge` to `mdi:crab` (closer to lobster/claw concept)
+- **Source**: Master SVG at `clawbridge/app/static/logo.svg`
+
 ## 1.4.0 - AI Context Endpoint
 
 - **Feature**: New `GET /api/context` endpoint returns a complete summary of the AI's permissions, exposed entities (grouped by access level), annotations, parameter constraints, time schedules, available services, and human-readable limitations -- all in a single call
