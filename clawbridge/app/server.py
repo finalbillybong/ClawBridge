@@ -190,6 +190,44 @@ async def _send_confirm_notification(action_id, domain, service, entity_id):
         logger.warning("Failed to send confirmation notification: %s", e)
 
 
+async def _send_chat_notification(response_text):
+    """Send the AI chat response as a push notification with deep-link to Chat tab."""
+    if not config_mgr.chat_notify_enabled:
+        return
+
+    notify_service = config_mgr.chat_notify_service or config_mgr.confirm_notify_service
+    if not notify_service or "." not in notify_service:
+        return
+
+    ndomain, nservice = notify_service.split(".", 1)
+    ai = config_mgr.ai_name
+
+    # Truncate if needed
+    max_len = config_mgr.chat_notify_max_length
+    body = response_text[:max_len]
+    if len(response_text) > max_len:
+        body += "..."
+
+    deep_link = f"{ingress_url}#chat" if ingress_url else ""
+
+    try:
+        data = {
+            "tag": "clawbridge_chat_response",
+            "group": "clawbridge_chat",
+        }
+        if deep_link:
+            data["clickAction"] = deep_link  # Android
+            data["url"] = deep_link           # iOS
+
+        await ha_client.call_service(ndomain, nservice, {
+            "title": f"ClawBridge: {ai}",
+            "message": body,
+            "data": data,
+        })
+    except Exception as e:
+        logger.warning("Failed to send chat notification: %s", e)
+
+
 # ──────────────────────────────────────────────
 # UI Routes (authenticated via ingress)
 # ──────────────────────────────────────────────
@@ -306,6 +344,9 @@ async def api_get_settings(request):
         "ai_name": config_mgr.ai_name,
         "gateway_url": config_mgr.gateway_url,
         "gateway_token": config_mgr.gateway_token,
+        "chat_notify_enabled": config_mgr.chat_notify_enabled,
+        "chat_notify_service": config_mgr.chat_notify_service,
+        "chat_notify_max_length": config_mgr.chat_notify_max_length,
     })
 
 
@@ -336,6 +377,12 @@ async def api_save_settings(request):
         config_mgr.gateway_url = data["gateway_url"]
     if "gateway_token" in data:
         config_mgr.gateway_token = data["gateway_token"]
+    if "chat_notify_enabled" in data:
+        config_mgr.chat_notify_enabled = data["chat_notify_enabled"]
+    if "chat_notify_service" in data:
+        config_mgr.chat_notify_service = data["chat_notify_service"]
+    if "chat_notify_max_length" in data:
+        config_mgr.chat_notify_max_length = data["chat_notify_max_length"]
     return web.json_response({"status": "ok"})
 
 
@@ -602,7 +649,7 @@ async def ha_api_config(request):
     """GET /api/config - HA compatibility: minimal mock config."""
     return web.json_response({
         "components": list(config_mgr.get_control_domains()),
-        "version": "clawbridge-1.4.0",
+        "version": "clawbridge-1.5.0",
         "location_name": "ClawBridge",
     }, headers=CORS_HEADERS)
 
@@ -1041,12 +1088,21 @@ async def ha_api_context(request):
         except Exception:
             pass
 
+    # Groups / rooms context (filtered to effective entities)
+    all_groups = config_mgr.entity_groups
+    groups_context = {}
+    for gid, group in all_groups.items():
+        group_entities = [eid for eid in group.get("entities", []) if eid in effective]
+        if group_entities:
+            groups_context[group.get("name", gid)] = group_entities
+
     limitations = [
         "Entities listed under 'read' can only be observed. Service calls will be rejected.",
         "Entities listed under 'confirm' require human approval. Service calls return 202 and are queued.",
         "Parameter constraints are enforced server-side. Values outside min/max are auto-clamped.",
         "Entities with time schedules can only be controlled during the listed hours and days.",
         "Rate limiting is active. Exceeding the limit returns 429.",
+        "Entities may belong to named groups (rooms/functions). Use group names for contextual understanding.",
     ]
 
     return web.json_response({
@@ -1059,6 +1115,7 @@ async def ha_api_context(request):
         "annotations": annotations,
         "constraints": constraints,
         "schedules": schedules,
+        "groups": groups_context,
         "available_services": available_services,
         "limitations": limitations,
     }, headers=CORS_HEADERS)
@@ -1445,6 +1502,8 @@ async def api_chat(request):
     )
     await response.prepare(request)
 
+    full_response_text = ""  # accumulate for notification
+
     try:
         timeout = aiohttp_client.ClientTimeout(total=120)
         async with aiohttp_client.ClientSession(timeout=timeout) as session:
@@ -1469,6 +1528,7 @@ async def api_chat(request):
                             delta = chunk.get("choices", [{}])[0].get("delta", {})
                             content = delta.get("content", "")
                             if content:
+                                full_response_text += content
                                 await response.write(f"data: {json.dumps({'content': content})}\n\n".encode())
                         except (json.JSONDecodeError, IndexError, KeyError):
                             pass
@@ -1479,6 +1539,10 @@ async def api_chat(request):
         logger.error("Chat proxy error: %s", e)
         await response.write(f"data: {json.dumps({'error': str(e)})}\n\n".encode())
         await response.write(b"data: [DONE]\n\n")
+
+    # Send chat notification (fire-and-forget)
+    if full_response_text.strip():
+        asyncio.create_task(_send_chat_notification(full_response_text))
 
     return response
 
@@ -1513,6 +1577,179 @@ async def api_chat_status(request):
         "configured": bool(config_mgr.gateway_url),
         "has_token": bool(config_mgr.gateway_token),
     })
+
+
+# ──────────────────────────────────────────────
+# Entity Groups (UI/ingress only)
+# ──────────────────────────────────────────────
+
+async def api_list_groups(request):
+    """GET /api/groups - List all entity groups."""
+    return web.json_response({"groups": config_mgr.entity_groups})
+
+
+async def api_create_group(request):
+    """POST /api/groups - Create entity group."""
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+    name = data.get("name", "").strip()
+    if not name:
+        return web.json_response({"error": "Group name required"}, status=400)
+    entities = data.get("entities", [])
+    icon = data.get("icon", "")
+    group_id = config_mgr.create_group(name, entities, icon)
+    return web.json_response({"status": "ok", "group_id": group_id})
+
+
+async def api_update_group(request):
+    """POST /api/groups/{group_id} - Update entity group."""
+    group_id = request.match_info["group_id"]
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+    if not config_mgr.update_group(group_id, **data):
+        return web.json_response({"error": "Group not found"}, status=404)
+    return web.json_response({"status": "ok"})
+
+
+async def api_delete_group(request):
+    """DELETE /api/groups/{group_id} - Delete entity group."""
+    group_id = request.match_info["group_id"]
+    if not config_mgr.delete_group(group_id):
+        return web.json_response({"error": "Group not found"}, status=404)
+    return web.json_response({"status": "ok"})
+
+
+async def api_set_group_access(request):
+    """POST /api/groups/{group_id}/access - Bulk set access level for all entities in a group."""
+    group_id = request.match_info["group_id"]
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+    level = data.get("access_level", "")
+    if level not in ("read", "confirm", "control", "off"):
+        return web.json_response({"error": "Invalid access level"}, status=400)
+    count = config_mgr.set_group_access_level(group_id, level)
+    return web.json_response({"status": "ok", "changed": count})
+
+
+# ──────────────────────────────────────────────
+# Markdown File Editor (UI/ingress only)
+# ──────────────────────────────────────────────
+
+# Sandboxed directories and allowed extensions
+EDITOR_ALLOWED_DIRS = ["/data", "/app"]
+EDITOR_ALLOWED_EXTENSIONS = {".md"}
+
+
+def _validate_editor_path(path):
+    """Validate that a path is within allowed directories and has allowed extension.
+    Returns (resolved_path, error_message). error_message is None if valid.
+    """
+    if not path:
+        return None, "Path required"
+    resolved = os.path.realpath(path)
+    ext = os.path.splitext(resolved)[1].lower()
+    if ext not in EDITOR_ALLOWED_EXTENSIONS:
+        return None, f"Only {', '.join(EDITOR_ALLOWED_EXTENSIONS)} files allowed"
+    allowed = False
+    for allowed_dir in EDITOR_ALLOWED_DIRS:
+        real_dir = os.path.realpath(allowed_dir)
+        if resolved.startswith(real_dir + os.sep) or resolved == real_dir:
+            allowed = True
+            break
+    if not allowed:
+        return None, "Path outside allowed directories"
+    return resolved, None
+
+
+async def api_list_files(request):
+    """GET /api/files?dir=/data - List .md files in a directory."""
+    target_dir = request.query.get("dir", "/data")
+    resolved_dir = os.path.realpath(target_dir)
+
+    # Validate directory is within allowed paths
+    allowed = False
+    for allowed_dir in EDITOR_ALLOWED_DIRS:
+        real_dir = os.path.realpath(allowed_dir)
+        if resolved_dir.startswith(real_dir + os.sep) or resolved_dir == real_dir:
+            allowed = True
+            break
+    if not allowed:
+        return web.json_response({"error": "Directory outside allowed paths"}, status=403)
+
+    files = []
+    if os.path.isdir(resolved_dir):
+        for entry in sorted(os.listdir(resolved_dir)):
+            full_path = os.path.join(resolved_dir, entry)
+            if os.path.isfile(full_path) and entry.lower().endswith(".md"):
+                stat = os.stat(full_path)
+                files.append({
+                    "path": full_path,
+                    "name": entry,
+                    "size": stat.st_size,
+                    "modified": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(stat.st_mtime)),
+                })
+    return web.json_response({"files": files, "dir": resolved_dir})
+
+
+async def api_read_file(request):
+    """GET /api/files/read?path=/data/notes.md - Read a .md file."""
+    path = request.query.get("path", "")
+    resolved, error = _validate_editor_path(path)
+    if error:
+        return web.json_response({"error": error}, status=403)
+    if not os.path.isfile(resolved):
+        return web.json_response({"error": "File not found"}, status=404)
+    # Cap at 1MB
+    size = os.path.getsize(resolved)
+    if size > 1_048_576:
+        return web.json_response({"error": "File too large (max 1MB)"}, status=413)
+    try:
+        with open(resolved, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+    return web.json_response({"path": resolved, "content": content, "size": size})
+
+
+async def api_save_file(request):
+    """POST /api/files/save - Write a .md file."""
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+    path = data.get("path", "")
+    content = data.get("content", "")
+    resolved, error = _validate_editor_path(path)
+    if error:
+        return web.json_response({"error": error}, status=403)
+    try:
+        os.makedirs(os.path.dirname(resolved), exist_ok=True)
+        with open(resolved, "w", encoding="utf-8") as f:
+            f.write(content)
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+    return web.json_response({"status": "ok", "size": len(content)})
+
+
+async def api_delete_file(request):
+    """DELETE /api/files?path=/data/notes.md - Delete a .md file."""
+    path = request.query.get("path", "")
+    resolved, error = _validate_editor_path(path)
+    if error:
+        return web.json_response({"error": error}, status=403)
+    if not os.path.isfile(resolved):
+        return web.json_response({"error": "File not found"}, status=404)
+    try:
+        os.remove(resolved)
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+    return web.json_response({"status": "ok"})
 
 
 # ──────────────────────────────────────────────
@@ -1608,6 +1845,19 @@ def create_ingress_app():
     app.router.add_post("/api/chat/history", api_chat_history_save)
     app.router.add_delete("/api/chat/history", api_chat_history_clear)
     app.router.add_get("/api/chat/status", api_chat_status)
+
+    # Entity Groups
+    app.router.add_get("/api/groups", api_list_groups)
+    app.router.add_post("/api/groups", api_create_group)
+    app.router.add_post("/api/groups/{group_id}", api_update_group)
+    app.router.add_delete("/api/groups/{group_id}", api_delete_group)
+    app.router.add_post("/api/groups/{group_id}/access", api_set_group_access)
+
+    # File Editor
+    app.router.add_get("/api/files", api_list_files)
+    app.router.add_get("/api/files/read", api_read_file)
+    app.router.add_post("/api/files/save", api_save_file)
+    app.router.add_delete("/api/files", api_delete_file)
 
     # Also serve AI endpoints on ingress for testing
     app.router.add_get("/api/ai-sensors", api_ai_sensors)

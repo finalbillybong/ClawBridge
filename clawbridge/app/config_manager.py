@@ -50,6 +50,12 @@ DEFAULT_CONFIG = {
     "gateway_url": "",
     "gateway_token": "",
     "chat_history": [],
+    # Chat notifications
+    "chat_notify_enabled": False,
+    "chat_notify_service": "",       # empty = fall back to confirm_notify_service
+    "chat_notify_max_length": 500,
+    # Entity groups: { group_id: { "name": str, "entities": [entity_id, ...], "icon": str } }
+    "entity_groups": {},
 }
 
 
@@ -497,6 +503,109 @@ class ConfigManager:
         # Cap at 200 messages
         self._config["chat_history"] = value[-200:]
         self._save()
+
+    # ── Chat Notifications ─────────────────────────
+
+    @property
+    def chat_notify_enabled(self):
+        return self._config.get("chat_notify_enabled", False)
+
+    @chat_notify_enabled.setter
+    def chat_notify_enabled(self, value):
+        self._config["chat_notify_enabled"] = bool(value)
+        self._save()
+
+    @property
+    def chat_notify_service(self):
+        return self._config.get("chat_notify_service", "")
+
+    @chat_notify_service.setter
+    def chat_notify_service(self, value):
+        self._config["chat_notify_service"] = str(value).strip() if value else ""
+        self._save()
+
+    @property
+    def chat_notify_max_length(self):
+        return self._config.get("chat_notify_max_length", 500)
+
+    @chat_notify_max_length.setter
+    def chat_notify_max_length(self, value):
+        self._config["chat_notify_max_length"] = max(50, min(2000, int(value)))
+        self._save()
+
+    # ── Entity Groups ──────────────────────────────
+
+    @property
+    def entity_groups(self):
+        """Dict of group_id -> { name, entities, icon }."""
+        return self._config.get("entity_groups", {})
+
+    def create_group(self, name, entities=None, icon=""):
+        """Create a new entity group. Returns group_id."""
+        group_id = "grp_" + "".join(
+            secrets.choice(string.ascii_lowercase + string.digits) for _ in range(6)
+        )
+        groups = self._config.get("entity_groups", {})
+        groups[group_id] = {
+            "name": str(name)[:100],
+            "entities": list(entities) if entities else [],
+            "icon": str(icon)[:10] if icon else "",
+        }
+        self._config["entity_groups"] = groups
+        self._save()
+        return group_id
+
+    def update_group(self, group_id, **kwargs):
+        """Update group fields (name, entities, icon)."""
+        groups = self._config.get("entity_groups", {})
+        if group_id not in groups:
+            return False
+        for key in ("name", "entities", "icon"):
+            if key in kwargs:
+                if key == "name":
+                    groups[group_id][key] = str(kwargs[key])[:100]
+                elif key == "entities":
+                    groups[group_id][key] = list(kwargs[key])
+                elif key == "icon":
+                    groups[group_id][key] = str(kwargs[key])[:10]
+        self._config["entity_groups"] = groups
+        self._save()
+        return True
+
+    def delete_group(self, group_id):
+        """Delete an entity group. Returns True if found."""
+        groups = self._config.get("entity_groups", {})
+        if group_id in groups:
+            del groups[group_id]
+            self._config["entity_groups"] = groups
+            self._save()
+            return True
+        return False
+
+    def set_group_access_level(self, group_id, access_level):
+        """Set all entities in a group to the given access level.
+        Returns count of entities changed.
+        """
+        if access_level not in VALID_ACCESS_LEVELS and access_level != "off":
+            return 0
+        groups = self._config.get("entity_groups", {})
+        group = groups.get(group_id)
+        if not group:
+            return 0
+
+        exposed = self._config.get("exposed_entities", {})
+        count = 0
+        for eid in group.get("entities", []):
+            if access_level == "off":
+                if eid in exposed:
+                    del exposed[eid]
+                    count += 1
+            else:
+                exposed[eid] = access_level
+                count += 1
+        self._config["exposed_entities"] = exposed
+        self._save()
+        return count
 
     # ── Presets ────────────────────────────────────
 

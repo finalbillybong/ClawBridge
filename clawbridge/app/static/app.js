@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════
-   ClawBridge - Frontend Application v1.2.0
+   ClawBridge - Frontend Application v1.5.0
    ═══════════════════════════════════════════════ */
 
 const BASE_PATH = window.location.pathname.replace(/\/$/, '');
@@ -11,6 +11,7 @@ let entityAnnotations = {};  // { entity_id: "description" }
 let entityConstraints = {};  // { entity_id: { param: { min, max } } }
 let entitySchedules = {};    // { entity_id: schedule_id }
 let allSchedules = {};       // { schedule_id: { name, start, end, days } }
+let entityGroups = {};       // { group_id: { name, entities, icon } }
 let activeDomain = null;
 let currentTab = 'dashboard';
 let undoSnapshot = null;
@@ -63,6 +64,10 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('sensitive-confirm-check').addEventListener('change', (e) => {
     document.getElementById('sensitive-confirm-btn').disabled = !e.target.checked;
   });
+  // Deep-link: #chat from notification tap
+  if (window.location.hash === '#chat') {
+    switchTab('chat');
+  }
 });
 
 // ─── Mobile Sidebar ─────────────────────────────
@@ -117,6 +122,7 @@ async function loadEntities() {
     entityConstraints = data.constraints || {};
     entitySchedules = data.entity_schedules || {};
     allSchedules = data.schedules || {};
+    loadGroupsSidebar();
     renderDomainList();
     updateExposedCount();
     setStatus(true, `${getAllEntitiesFlat().length} entities loaded`);
@@ -199,6 +205,11 @@ function renderEntityList() {
     entities = getExposedEntities();
   } else if (activeDomain === '__all__') {
     entities = getAllEntitiesFlat();
+  } else if (activeDomain && activeDomain.startsWith('group:')) {
+    const groupId = activeDomain.slice(6);
+    const group = entityGroups[groupId];
+    const groupEntityIds = group ? new Set(group.entities || []) : new Set();
+    entities = getAllEntitiesFlat().filter(e => groupEntityIds.has(e.entity_id));
   } else if (activeDomain && allDomains[activeDomain]) {
     entities = allDomains[activeDomain];
   } else {
@@ -356,6 +367,12 @@ function getVisibleEntities() {
     );
   } else if (activeDomain === '__exposed__') { return getExposedEntities(); }
   else if (activeDomain === '__all__') { return getAllEntitiesFlat(); }
+  else if (activeDomain && activeDomain.startsWith('group:')) {
+    const groupId = activeDomain.slice(6);
+    const group = entityGroups[groupId];
+    const ids = group ? new Set(group.entities || []) : new Set();
+    return getAllEntitiesFlat().filter(e => ids.has(e.entity_id));
+  }
   else if (activeDomain && allDomains[activeDomain]) { return allDomains[activeDomain]; }
   return [];
 }
@@ -382,15 +399,16 @@ function filterEntities() { renderEntityList(); }
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-  ['dashboard', 'entities', 'audit', 'security', 'settings', 'chat'].forEach(t => {
+  ['dashboard', 'entities', 'audit', 'security', 'settings', 'chat', 'editor'].forEach(t => {
     const el = document.getElementById(`tab-${t}`);
     if (el) el.style.display = t === tab ? '' : 'none';
   });
   if (tab === 'dashboard') loadDashboard();
   if (tab === 'audit') loadAuditLogs();
-  if (tab === 'security') { loadApiKeys(); loadSchedules(); loadPendingActions(); }
+  if (tab === 'security') { loadApiKeys(); loadSchedules(); loadPendingActions(); loadGroups(); }
   if (tab === 'settings') loadPresets();
   if (tab === 'chat') initChat();
+  if (tab === 'editor') initEditor();
   if (tab === 'entities' && !activeDomain) {
     if (Object.keys(exposedEntities).length > 0) selectDomain('__exposed__');
     else { const d = Object.keys(allDomains).sort(); if (d.length) selectDomain(d[0]); }
@@ -773,6 +791,8 @@ async function loadSettings() {
     document.getElementById('setting-ai-name').value = data.ai_name || '';
     document.getElementById('setting-gateway-url').value = data.gateway_url || '';
     document.getElementById('setting-gateway-token').value = data.gateway_token || '';
+    document.getElementById('setting-chat-notify-enabled').checked = data.chat_notify_enabled === true;
+    document.getElementById('setting-chat-notify-service').value = data.chat_notify_service || '';
   } catch (err) { console.error('Failed to load settings:', err); }
 }
 
@@ -792,6 +812,8 @@ async function saveSettings() {
     ai_name: document.getElementById('setting-ai-name').value.trim(),
     gateway_url: document.getElementById('setting-gateway-url').value.trim(),
     gateway_token: document.getElementById('setting-gateway-token').value.trim(),
+    chat_notify_enabled: document.getElementById('setting-chat-notify-enabled').checked,
+    chat_notify_service: document.getElementById('setting-chat-notify-service').value.trim(),
   };
   try { await apiPost('/api/settings', settings); showToast('Settings saved.'); }
   catch (err) { showToast('Failed to save settings.', true); }
@@ -940,12 +962,38 @@ function renderMarkdown(text) {
   });
   // Inline code `...`
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // Headers (must be before bold)
+  html = html.replace(/^######\s+(.+)$/gm, '<h6>$1</h6>');
+  html = html.replace(/^#####\s+(.+)$/gm, '<h5>$1</h5>');
+  html = html.replace(/^####\s+(.+)$/gm, '<h4>$1</h4>');
+  html = html.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
+  // Horizontal rule
+  html = html.replace(/^---+$/gm, '<hr>');
+  // Blockquotes
+  html = html.replace(/^&gt;\s+(.+)$/gm, '<blockquote>$1</blockquote>');
   // Bold **...**
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   // Italic *...*
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  // Line breaks
+  // Links [text](url)
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // Unordered lists
+  html = html.replace(/^[\-\*]\s+(.+)$/gm, '<li>$1</li>');
+  // Wrap consecutive <li> in <ul>
+  html = html.replace(/(<li>[\s\S]*?<\/li>)(\n?<li>)/g, '$1$2');
+  html = html.replace(/((?:<li>[\s\S]*?<\/li>\n?)+)/g, '<ul>$1</ul>');
+  // Ordered lists
+  html = html.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
+  // Line breaks (but clean up around block elements)
   html = html.replace(/\n/g, '<br>');
+  html = html.replace(/<\/h([1-6])><br>/g, '</h$1>');
+  html = html.replace(/<\/blockquote><br>/g, '</blockquote>');
+  html = html.replace(/<\/li><br>/g, '</li>');
+  html = html.replace(/<\/ul><br>/g, '</ul>');
+  html = html.replace(/<hr><br>/g, '<hr>');
+  html = html.replace(/<\/pre><br>/g, '</pre>');
   return html;
 }
 
@@ -1062,4 +1110,253 @@ async function testGatewayConnection() {
   } catch (err) {
     showToast('Connection test failed: ' + err.message, true);
   }
+}
+
+// ─── Entity Groups ────────────────────────────
+
+let editingGroupId = null;
+
+async function loadGroupsSidebar() {
+  try {
+    const data = await apiGet('/api/groups');
+    entityGroups = data.groups || {};
+    renderGroupSidebar();
+  } catch (err) { console.error('Failed to load groups:', err); }
+}
+
+async function loadGroups() {
+  try {
+    const data = await apiGet('/api/groups');
+    entityGroups = data.groups || {};
+    renderGroupSidebar();
+    renderGroupsList();
+  } catch (err) { console.error('Failed to load groups:', err); }
+}
+
+function renderGroupSidebar() {
+  const container = document.getElementById('group-list');
+  const groupIds = Object.keys(entityGroups);
+  if (groupIds.length === 0) { container.innerHTML = ''; return; }
+
+  let html = '<div style="padding:4px 0;border-bottom:1px solid var(--border);margin-bottom:4px;">';
+  html += '<div style="font-size:9px;text-transform:uppercase;color:var(--text-3);padding:4px 12px;letter-spacing:1px;">Groups</div>';
+  groupIds.forEach(gid => {
+    const group = entityGroups[gid];
+    const icon = group.icon || '📁';
+    const count = (group.entities || []).length;
+    const isActive = activeDomain === `group:${gid}` ? 'active' : '';
+    html += `<div class="domain-item ${isActive}" onclick="selectGroup('${escapeAttr(gid)}')" data-domain="group:${gid}">
+      <span class="domain-icon">${icon}</span><span class="domain-name">${escapeHtml(group.name)}</span>
+      <span class="domain-count">${count}</span></div>`;
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function selectGroup(groupId) {
+  activeDomain = `group:${groupId}`;
+  document.querySelectorAll('.domain-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.domain === activeDomain);
+  });
+  const group = entityGroups[groupId];
+  const icon = group ? (group.icon || '📁') : '📁';
+  const label = group ? group.name : groupId;
+  document.getElementById('status-domain').textContent = `${icon} ${label}`;
+  renderEntityList();
+  closeSidebar();
+  if (window.innerWidth <= 768 && currentTab !== 'entities') {
+    switchTab('entities');
+  }
+}
+
+function renderGroupsList() {
+  const el = document.getElementById('groups-list');
+  const entries = Object.entries(entityGroups);
+  if (entries.length === 0) {
+    el.innerHTML = '<div class="empty-state-sm">No groups configured.</div>';
+    return;
+  }
+  el.innerHTML = entries.map(([id, g]) => {
+    const count = (g.entities || []).length;
+    return `<div class="group-item">
+      <div class="group-item-info">
+        <span class="group-item-icon">${g.icon || '📁'}</span>
+        <span class="key-item-name">${escapeHtml(g.name)}</span>
+        <span class="key-item-meta">${count} entities</span>
+      </div>
+      <div class="group-item-actions">
+        <button class="btn btn-xs" onclick="setGroupAccess('${escapeAttr(id)}','read')" title="Set all to read">R</button>
+        <button class="btn btn-xs" onclick="setGroupAccess('${escapeAttr(id)}','confirm')" title="Set all to confirm">C</button>
+        <button class="btn btn-xs" onclick="setGroupAccess('${escapeAttr(id)}','control')" title="Set all to control">W</button>
+        <button class="btn btn-xs" onclick="setGroupAccess('${escapeAttr(id)}','off')" title="Turn off all">Off</button>
+        <button class="btn btn-xs" onclick="showEditGroupModal('${escapeAttr(id)}')" title="Edit group">edit</button>
+        <button class="btn btn-danger btn-xs" onclick="deleteGroup('${escapeAttr(id)}')">del</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function showCreateGroupModal() {
+  editingGroupId = null;
+  document.getElementById('group-modal-title').textContent = 'Create Group';
+  document.getElementById('group-name-input').value = '';
+  document.getElementById('group-icon-input').value = '';
+  document.getElementById('group-save-btn').textContent = 'create';
+  renderGroupEntityPicker([]);
+  document.getElementById('group-modal').classList.add('show');
+  document.getElementById('group-name-input').focus();
+}
+
+function showEditGroupModal(groupId) {
+  editingGroupId = groupId;
+  const group = entityGroups[groupId];
+  if (!group) return;
+  document.getElementById('group-modal-title').textContent = 'Edit Group';
+  document.getElementById('group-name-input').value = group.name || '';
+  document.getElementById('group-icon-input').value = group.icon || '';
+  document.getElementById('group-save-btn').textContent = 'save';
+  renderGroupEntityPicker(group.entities || []);
+  document.getElementById('group-modal').classList.add('show');
+}
+
+function hideGroupModal() { document.getElementById('group-modal').classList.remove('show'); }
+
+function renderGroupEntityPicker(selectedEntities) {
+  const picker = document.getElementById('group-entity-picker');
+  const selected = new Set(selectedEntities);
+  const allEnts = getAllEntitiesFlat().sort((a, b) => a.entity_id.localeCompare(b.entity_id));
+  picker.innerHTML = allEnts.map(e => {
+    const checked = selected.has(e.entity_id) ? 'checked' : '';
+    return `<label class="group-picker-item"><input type="checkbox" value="${escapeAttr(e.entity_id)}" ${checked}><span>${escapeHtml(e.friendly_name)}</span><span class="group-picker-id">${e.entity_id}</span></label>`;
+  }).join('');
+}
+
+async function saveGroup() {
+  const name = document.getElementById('group-name-input').value.trim();
+  if (!name) { showToast('Group name required.', true); return; }
+  const icon = document.getElementById('group-icon-input').value.trim();
+  const entities = Array.from(document.querySelectorAll('#group-entity-picker input:checked')).map(cb => cb.value);
+
+  try {
+    if (editingGroupId) {
+      await apiPost(`/api/groups/${editingGroupId}`, { name, icon, entities });
+      showToast('Group updated.');
+    } else {
+      await apiPost('/api/groups', { name, icon, entities });
+      showToast('Group created.');
+    }
+    hideGroupModal();
+    loadGroups();
+    renderGroupSidebar();
+  } catch (err) { showToast('Failed to save group.', true); }
+}
+
+async function deleteGroup(groupId) {
+  if (!confirm('Delete this group?')) return;
+  try {
+    await apiDelete(`/api/groups/${groupId}`);
+    showToast('Group deleted.');
+    loadGroups();
+  } catch (err) { showToast('Failed to delete group.', true); }
+}
+
+async function setGroupAccess(groupId, level) {
+  try {
+    const data = await apiPost(`/api/groups/${groupId}/access`, { access_level: level });
+    showToast(`Set ${data.changed} entities to "${level}".`);
+    await loadEntities();
+    loadGroups();
+  } catch (err) { showToast('Failed to set group access.', true); }
+}
+
+// ─── Markdown Editor ──────────────────────────
+
+let editorFiles = [];
+let editorCurrentPath = '';
+let editorPreviewMode = false;
+let editorInitialized = false;
+
+async function initEditor() {
+  if (editorInitialized) return;
+  editorInitialized = true;
+  await loadEditorFileList();
+}
+
+async function loadEditorFileList() {
+  try {
+    const data = await apiGet('/api/files?dir=/data');
+    editorFiles = data.files || [];
+    const select = document.getElementById('editor-file-select');
+    select.innerHTML = '<option value="">-- select file --</option>' +
+      editorFiles.map(f => `<option value="${escapeAttr(f.path)}">${escapeHtml(f.name)}</option>`).join('');
+    // Re-select current file if still exists
+    if (editorCurrentPath) {
+      select.value = editorCurrentPath;
+    }
+  } catch (err) { showToast('Failed to load files.', true); }
+}
+
+async function loadEditorFile() {
+  const path = document.getElementById('editor-file-select').value;
+  if (!path) {
+    editorCurrentPath = '';
+    document.getElementById('editor-textarea').value = '';
+    if (editorPreviewMode) updateEditorPreview();
+    return;
+  }
+  try {
+    const data = await apiGet(`/api/files/read?path=${encodeURIComponent(path)}`);
+    document.getElementById('editor-textarea').value = data.content || '';
+    editorCurrentPath = path;
+    if (editorPreviewMode) updateEditorPreview();
+  } catch (err) { showToast('Failed to load file.', true); }
+}
+
+async function saveEditorFile() {
+  if (!editorCurrentPath) { showToast('No file selected.', true); return; }
+  const content = document.getElementById('editor-textarea').value;
+  try {
+    await apiPost('/api/files/save', { path: editorCurrentPath, content });
+    showToast('File saved.');
+  } catch (err) { showToast('Failed to save file.', true); }
+}
+
+async function newEditorFile() {
+  const name = prompt('File name (e.g. notes.md):');
+  if (!name) return;
+  if (!name.endsWith('.md')) { showToast('File must end with .md', true); return; }
+  const path = '/data/' + name;
+  try {
+    await apiPost('/api/files/save', { path, content: `# ${name.replace('.md', '')}\n\n` });
+    await loadEditorFileList();
+    document.getElementById('editor-file-select').value = path;
+    await loadEditorFile();
+    showToast('File created.');
+  } catch (err) { showToast('Failed to create file.', true); }
+}
+
+async function deleteEditorFile() {
+  if (!editorCurrentPath) return;
+  if (!confirm(`Delete ${editorCurrentPath}?`)) return;
+  try {
+    await apiDelete(`/api/files?path=${encodeURIComponent(editorCurrentPath)}`);
+    editorCurrentPath = '';
+    document.getElementById('editor-textarea').value = '';
+    await loadEditorFileList();
+    if (editorPreviewMode) updateEditorPreview();
+    showToast('File deleted.');
+  } catch (err) { showToast('Failed to delete file.', true); }
+}
+
+function toggleEditorPreview() {
+  editorPreviewMode = !editorPreviewMode;
+  document.getElementById('editor-preview').style.display = editorPreviewMode ? '' : 'none';
+  document.getElementById('editor-textarea').style.display = editorPreviewMode ? 'none' : '';
+  document.getElementById('editor-preview-toggle').textContent = editorPreviewMode ? 'edit' : 'preview';
+  if (editorPreviewMode) updateEditorPreview();
+}
+
+function updateEditorPreview() {
+  const text = document.getElementById('editor-textarea').value;
+  document.getElementById('editor-preview').innerHTML = renderMarkdown(text);
 }

@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.5.0 - Chat Notifications, Entity Groups & Markdown Editor
+
+- **Chat Notifications**: AI chat responses are now sent as HA push notifications; tapping the notification deep-links to the Chat tab via the Companion App
+  - New settings: enable/disable toggle, optional separate notify service, configurable max message length
+  - Uses tag replacement so only the latest response shows (no notification spam)
+- **Entity Groups**: Create named groups of entities (e.g. "Kitchen", "Security") for bulk access control
+  - Groups appear in the sidebar for quick entity filtering
+  - Bulk access buttons (read/confirm/control/off) set all group entities at once
+  - Groups exposed to AI via `/api/context` for room/function awareness
+  - Full CRUD via Security tab with entity picker modal
+- **Markdown Editor**: New "Editor" tab for viewing and editing `.md` files through the WebUI
+  - File browser sandboxed to `/data` and `/app` directories (`.md` files only)
+  - Create, edit, save, and delete files without SSH
+  - Live preview toggle with enhanced markdown rendering (headers, lists, links, blockquotes, code blocks, horizontal rules)
+  - Path traversal protection via `os.path.realpath` validation
+- **Enhanced Markdown Renderer**: `renderMarkdown()` now supports headers, blockquotes, unordered lists, links, and horizontal rules in addition to existing code blocks, bold, and italic
+
 ## 1.4.3 - Sidebar Icon Reverted
 
 - **Fix**: Reverted sidebar icon to `mdi:bridge` — MDI has no lobster/claw icon; bridge is the most recognisable part of the ClawBridge brand
