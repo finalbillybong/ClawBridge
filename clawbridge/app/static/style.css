@@ -125,7 +125,7 @@ body {
   letter-spacing: -0.01em;
 }
 
-.sidebar-header h1 svg { width: 22px; height: 22px; color: var(--claw); filter: drop-shadow(0 0 6px rgba(249,112,102,0.4)); }
+.sidebar-header h1 svg { width: 22px; height: 22px; filter: drop-shadow(0 0 6px rgba(249,112,102,0.3)); }
 
 .sidebar-header .subtitle { font-size: 11px; color: var(--text-3); margin-top: 4px; font-family: var(--mono); letter-spacing: 0.02em; }
 

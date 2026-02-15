@@ -85,6 +85,19 @@ To give your AI the ability to control Home Assistant through ClawBridge:
 - Rate limiting prevents abuse
 - Optional IP allowlist restricts access
 
+## Branding
+
+The ClawBridge logo is a lobster claw (from OpenClaw) sitting on a bridge arch. The coral claw (`#f97066`) and sky-blue bridge (`#38bdf8`) are the brand colours used throughout.
+
+| Location | Asset |
+|----------|-------|
+| HA sidebar | `mdi:crab` (MDI, monochrome -- closest match to the lobster/claw concept) |
+| Web UI (top left) | Inline SVG in `index.html` (claw + bridge, uses `currentColor`) |
+| Add-on store icon | `clawbridge/icon.png` (128x128, claw + bridge on dark bg) |
+| Add-on store logo | `clawbridge/logo.png` (~250x100, icon + "ClawBridge" text) |
+| Browser tab | SVG favicon embedded as data URI in `index.html` |
+| Master source | `clawbridge/app/static/logo.svg` |
+
 ## Screenshots
 
 *Coming soon*

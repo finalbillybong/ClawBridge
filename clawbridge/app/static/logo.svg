@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Lobster claw (coral #f97066) -->
+  <path d="M8.5 10 C6 10, 3.5 8, 4 5 C4.3 3.2, 6 2, 8 2.5 C9.5 2.8, 10 4, 9.5 5.5" stroke="#f97066" stroke-width="2"/>
+  <path d="M15.5 10 C18 10, 20.5 8, 20 5 C19.7 3.2, 18 2, 16 2.5 C14.5 2.8, 14 4, 14.5 5.5" stroke="#f97066" stroke-width="2"/>
+  <path d="M8.5 10 C10 11.5, 14 11.5, 15.5 10" stroke="#f97066" stroke-width="2"/>
+  <!-- Bridge (sky blue #38bdf8) -->
+  <path d="M2 21 Q2 14, 12 13 Q22 14, 22 21" stroke="#38bdf8" stroke-width="1.8"/>
+  <line x1="1" y1="21" x2="23" y2="21" stroke="#38bdf8" stroke-width="1.8"/>
+  <line x1="7" y1="17" x2="7" y2="21" stroke="#38bdf8" stroke-width="1.8"/>
+  <line x1="17" y1="17" x2="17" y2="21" stroke="#38bdf8" stroke-width="1.8"/>
+</svg>

@@ -13,7 +13,7 @@ init: false
 homeassistant_api: true
 ingress: true
 ingress_port: 8099
-panel_icon: "mdi:bridge"
+panel_icon: "mdi:crab"
 panel_title: "ClawBridge"
 ports:
   "8099/tcp": null
