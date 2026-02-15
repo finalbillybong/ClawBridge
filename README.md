@@ -91,7 +91,7 @@ The ClawBridge logo is a lobster claw (from OpenClaw) sitting on a bridge arch. 
 
 | Location | Asset |
 |----------|-------|
-| HA sidebar | `mdi:zodiac-cancer` (MDI crab/lobster symbol, monochrome) |
+| HA sidebar | `mdi:bridge` (MDI only supports standard icons; bridge is the closest brand match) |
 | Web UI (top left) | Inline SVG in `index.html` (claw + bridge, uses `currentColor`) |
 | Add-on store icon | `clawbridge/icon.png` (128x128, claw + bridge on dark bg) |
 | Add-on store logo | `clawbridge/logo.png` (~250x100, icon + "ClawBridge" text) |

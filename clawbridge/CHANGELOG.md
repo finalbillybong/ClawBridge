@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.3 - Sidebar Icon Reverted
+
+- **Fix**: Reverted sidebar icon to `mdi:bridge` — MDI has no lobster/claw icon; bridge is the most recognisable part of the ClawBridge brand
+
 ## 1.4.2 - Sidebar Icon Fix
 
 - **Fix**: Sidebar icon was blank — `mdi:crab` does not exist in MDI. Changed to `mdi:zodiac-cancer` (crab symbol)

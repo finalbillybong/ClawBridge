@@ -1,6 +1,6 @@
 name: "ClawBridge"
 description: "AI guard rail for Home Assistant with per-entity access control."
-version: "1.4.2"
+version: "1.4.3"
 slug: "clawbridge"
 url: "https://github.com/finalbillybong/ClawBridge"
 arch:
@@ -13,7 +13,7 @@ init: false
 homeassistant_api: true
 ingress: true
 ingress_port: 8099
-panel_icon: "mdi:zodiac-cancer"
+panel_icon: "mdi:bridge"
 panel_title: "ClawBridge"
 ports:
   "8099/tcp": null
