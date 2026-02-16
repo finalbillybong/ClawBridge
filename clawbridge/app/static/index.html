@@ -334,12 +334,13 @@
     <div id="tab-editor" style="display:none;">
       <div class="editor-container">
         <div class="editor-toolbar">
+          <span id="editor-mode-badge" class="editor-mode-badge"></span>
           <select id="editor-file-select" onchange="loadEditorFile()">
             <option value="">-- select file --</option>
           </select>
-          <button class="btn btn-sm" onclick="newEditorFile()">+ new</button>
+          <button class="btn btn-sm" id="editor-new-btn" onclick="newEditorFile()">+ new</button>
           <button class="btn btn-sm btn-primary" onclick="saveEditorFile()">save</button>
-          <button class="btn btn-sm btn-danger" onclick="deleteEditorFile()">delete</button>
+          <button class="btn btn-sm btn-danger" id="editor-delete-btn" onclick="deleteEditorFile()">delete</button>
           <div style="flex:1;"></div>
           <button class="btn btn-sm" id="editor-preview-toggle" onclick="toggleEditorPreview()">preview</button>
         </div>

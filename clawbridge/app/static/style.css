@@ -1041,6 +1041,19 @@ body {
   padding: 10px 16px; border-bottom: 1px solid var(--border);
   background: var(--bg-2); flex-shrink: 0;
 }
+.editor-mode-badge {
+  font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px;
+  padding: 2px 8px; border-radius: 4px; font-family: var(--mono);
+  white-space: nowrap;
+}
+.editor-mode-badge.gateway {
+  background: var(--success-dim, rgba(16,185,129,.15));
+  color: var(--success, #10b981);
+}
+.editor-mode-badge.local {
+  background: var(--bg-4, var(--bg-3));
+  color: var(--text-3, var(--text-2));
+}
 .editor-toolbar select {
   flex: 0 0 220px; height: 30px; padding: 0 8px;
   background: var(--bg-input, var(--bg-1)); color: var(--text-1);

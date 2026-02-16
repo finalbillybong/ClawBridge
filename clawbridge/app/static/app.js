@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════
-   ClawBridge - Frontend Application v1.5.0
+   ClawBridge - Frontend Application v1.5.1
    ═══════════════════════════════════════════════ */
 
 const BASE_PATH = window.location.pathname.replace(/\/$/, '');
@@ -1276,15 +1276,45 @@ let editorCurrentPath = '';
 let editorPreviewMode = false;
 let editorInitialized = false;
 
+let editorMode = 'local'; // 'gateway' or 'local'
+
 async function initEditor() {
   if (editorInitialized) return;
   editorInitialized = true;
+
+  // Check editor mode from backend
+  try {
+    const status = await apiGet('/api/editor/status');
+    editorMode = status.mode || 'local';
+    const badge = document.getElementById('editor-mode-badge');
+    if (badge) {
+      if (editorMode === 'gateway') {
+        badge.textContent = 'workspace';
+        badge.className = 'editor-mode-badge gateway';
+        badge.title = 'Editing OpenClaw workspace files via Gateway';
+      } else {
+        badge.textContent = 'local';
+        badge.className = 'editor-mode-badge local';
+        badge.title = 'Editing local addon files';
+      }
+    }
+    // Hide delete and new buttons in gateway mode
+    const deleteBtn = document.getElementById('editor-delete-btn');
+    if (deleteBtn) deleteBtn.style.display = editorMode === 'gateway' ? 'none' : '';
+    const newBtn = document.getElementById('editor-new-btn');
+    if (newBtn) newBtn.style.display = editorMode === 'gateway' ? 'none' : '';
+  } catch (err) {
+    console.error('Editor status check failed:', err);
+  }
+
   await loadEditorFileList();
 }
 
 async function loadEditorFileList() {
   try {
-    const data = await apiGet('/api/files?dir=/data');
+    // In gateway mode, no dir param needed; in local mode, use /data
+    const url = editorMode === 'gateway' ? '/api/files' : '/api/files?dir=/data';
+    const data = await apiGet(url);
     editorFiles = data.files || [];
     const select = document.getElementById('editor-file-select');
     select.innerHTML = '<option value="">-- select file --</option>' +
@@ -1293,7 +1323,17 @@ async function loadEditorFileList() {
     if (editorCurrentPath) {
       select.value = editorCurrentPath;
     }
-  } catch (err) { showToast('Failed to load files.', true); }
+    if (editorFiles.length === 0 && editorMode === 'gateway') {
+      document.getElementById('editor-textarea').placeholder = 'No .md files found in OpenClaw workspace. Is the Gateway URL and Token configured in Settings?';
+    }
+  } catch (err) {
+    if (editorMode === 'gateway') {
+      showToast('Failed to load workspace files — check Gateway URL/Token in Settings.', true);
+      document.getElementById('editor-textarea').placeholder = 'Could not connect to OpenClaw Gateway. Check your Gateway URL and Token in Settings.';
+    } else {
+      showToast('Failed to load files.', true);
+    }
+  }
 }
 
 async function loadEditorFile() {
@@ -1325,7 +1365,8 @@ async function newEditorFile() {
   const name = prompt('File name (e.g. notes.md):');
   if (!name) return;
   if (!name.endsWith('.md')) { showToast('File must end with .md', true); return; }
-  const path = '/data/' + name;
+  // In gateway mode use bare filename; in local mode prefix with /data/
+  const path = editorMode === 'gateway' ? name : '/data/' + name;
   try {
     await apiPost('/api/files/save', { path, content: `# ${name.replace('.md', '')}\n\n` });
     await loadEditorFileList();

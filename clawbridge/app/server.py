@@ -208,7 +208,13 @@ async def _send_chat_notification(response_text):
     if len(response_text) > max_len:
         body += "..."
 
-    deep_link = f"{ingress_url}#chat" if ingress_url else ""
+    # Build deep-link for HA Companion App — must be a relative path
+    # that the Companion App opens inside its authenticated WebView.
+    deep_link = ""
+    if ingress_url:
+        path = ingress_url if ingress_url.endswith("/") else ingress_url + "/"
+        deep_link = f"{path}#chat"
+        logger.debug("Chat notification deep-link: %s", deep_link)
 
     try:
         data = {
@@ -649,7 +655,7 @@ async def ha_api_config(request):
     """GET /api/config - HA compatibility: minimal mock config."""
     return web.json_response({
         "components": list(config_mgr.get_control_domains()),
-        "version": "clawbridge-1.5.0",
+        "version": "clawbridge-1.5.1",
         "location_name": "ClawBridge",
     }, headers=CORS_HEADERS)
 
@@ -1639,11 +1645,72 @@ async def api_set_group_access(request):
 
 # ──────────────────────────────────────────────
 # Markdown File Editor (UI/ingress only)
+# Gateway mode: reads/writes OpenClaw workspace files via /tools/invoke
+# Local mode: reads/writes local /data .md files (fallback)
 # ──────────────────────────────────────────────
 
-# Sandboxed directories and allowed extensions
+# Local-mode sandboxed directories and allowed extensions
 EDITOR_ALLOWED_DIRS = ["/data", "/app"]
 EDITOR_ALLOWED_EXTENSIONS = {".md"}
+
+
+def _editor_is_gateway_mode():
+    """Check if editor should use gateway mode (gateway URL is configured)."""
+    return bool(config_mgr.gateway_url)
+
+
+async def _gateway_tool_invoke(tool_name, args):
+    """Invoke an OpenClaw Gateway tool via POST /tools/invoke.
+    Returns (result_text, error_string). result_text is the text content from
+    the gateway response envelope; error_string is None on success.
+    """
+    gateway_url = config_mgr.gateway_url
+    gateway_token = config_mgr.gateway_token
+    if not gateway_url:
+        return None, "Gateway URL not configured"
+
+    url = gateway_url.rstrip("/") + "/tools/invoke"
+    headers = {"Content-Type": "application/json"}
+    if gateway_token:
+        headers["Authorization"] = f"Bearer {gateway_token}"
+
+    payload = {"tool": tool_name, "args": args}
+
+    try:
+        timeout = aiohttp_client.ClientTimeout(total=15)
+        async with aiohttp_client.ClientSession(timeout=timeout) as session:
+            async with session.post(url, json=payload, headers=headers) as resp:
+                if resp.status == 401:
+                    return None, "Gateway authentication failed — check your Gateway Token"
+                if resp.status == 404:
+                    return None, f"Gateway tool '{tool_name}' not available — check tool policy"
+                if resp.status == 429:
+                    return None, "Gateway rate limited — try again later"
+                if resp.status != 200:
+                    body = await resp.text()
+                    return None, f"Gateway returned HTTP {resp.status}: {body[:200]}"
+
+                data = await resp.json()
+                if not data.get("ok"):
+                    err = data.get("error", "Unknown gateway error")
+                    return None, str(err)
+
+                # Unwrap response envelope: { ok, result: { content: [{ type, text }], ... } }
+                result = data.get("result", {})
+                content_blocks = result.get("content", [])
+                texts = []
+                for block in content_blocks:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        texts.append(block.get("text", ""))
+                    elif isinstance(block, str):
+                        texts.append(block)
+                return "\n".join(texts), None
+
+    except asyncio.TimeoutError:
+        return None, "Gateway request timed out (15s)"
+    except Exception as e:
+        logger.error("Gateway tool invoke error: %s", e)
+        return None, str(e)
 
 
 def _validate_editor_path(path):
@@ -1667,12 +1734,121 @@ def _validate_editor_path(path):
     return resolved, None
 
 
+async def api_editor_status(request):
+    """GET /api/editor/status - Return editor mode and gateway availability."""
+    gw_mode = _editor_is_gateway_mode()
+    return web.json_response({
+        "mode": "gateway" if gw_mode else "local",
+        "gateway_configured": bool(config_mgr.gateway_url),
+    })
+
+
 async def api_list_files(request):
-    """GET /api/files?dir=/data - List .md files in a directory."""
+    """GET /api/files - List .md files (gateway workspace or local /data)."""
+    if _editor_is_gateway_mode():
+        return await _gateway_list_files(request)
+    return await _local_list_files(request)
+
+
+async def api_read_file(request):
+    """GET /api/files/read?path=... - Read a .md file."""
+    if _editor_is_gateway_mode():
+        return await _gateway_read_file(request)
+    return await _local_read_file(request)
+
+
+async def api_save_file(request):
+    """POST /api/files/save - Write a .md file."""
+    if _editor_is_gateway_mode():
+        return await _gateway_save_file(request)
+    return await _local_save_file(request)
+
+
+# ── Gateway mode implementations ─────────────
+
+async def _gateway_list_files(request):
+    """List workspace .md files via the OpenClaw Gateway read tool."""
+    result_text, error = await _gateway_tool_invoke("read", {"path": "."})
+    if error:
+        return web.json_response({"error": error, "files": [], "mode": "gateway"}, status=502)
+
+    # Parse directory listing — the read tool returns a text listing of files/dirs
+    # Typical format: one entry per line, may include metadata
+    files = []
+    for line in result_text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # Extract filename — could be just the name, or have extra info
+        # Try to grab the part that ends with .md
+        parts = line.split()
+        for part in parts:
+            clean = part.strip("/").strip()
+            if clean.lower().endswith(".md"):
+                files.append({
+                    "path": clean,
+                    "name": clean,
+                    "size": 0,
+                    "modified": "",
+                })
+                break
+
+    # Sort alphabetically
+    files.sort(key=lambda f: f["name"].lower())
+    return web.json_response({"files": files, "dir": "workspace", "mode": "gateway"})
+
+
+async def _gateway_read_file(request):
+    """Read a workspace .md file via the OpenClaw Gateway read tool."""
+    filename = request.query.get("path", "")
+    if not filename:
+        return web.json_response({"error": "Filename required"}, status=400)
+    if not filename.lower().endswith(".md"):
+        return web.json_response({"error": "Only .md files allowed"}, status=403)
+
+    result_text, error = await _gateway_tool_invoke("read", {"path": filename})
+    if error:
+        return web.json_response({"error": error}, status=502)
+
+    return web.json_response({
+        "path": filename,
+        "content": result_text,
+        "size": len(result_text),
+        "mode": "gateway",
+    })
+
+
+async def _gateway_save_file(request):
+    """Write a workspace .md file via the OpenClaw Gateway write tool."""
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+
+    filename = data.get("path", "")
+    content = data.get("content", "")
+    if not filename:
+        return web.json_response({"error": "Filename required"}, status=400)
+    if not filename.lower().endswith(".md"):
+        return web.json_response({"error": "Only .md files allowed"}, status=403)
+
+    result_text, error = await _gateway_tool_invoke("write", {
+        "path": filename,
+        "content": content,
+    })
+    if error:
+        return web.json_response({"error": error}, status=502)
+
+    return web.json_response({"status": "ok", "size": len(content), "mode": "gateway"})
+
+
+# ── Local mode implementations (fallback) ────
+
+async def _local_list_files(request):
+    """List .md files from local filesystem."""
     target_dir = request.query.get("dir", "/data")
     resolved_dir = os.path.realpath(target_dir)
 
-    # Validate directory is within allowed paths
     allowed = False
     for allowed_dir in EDITOR_ALLOWED_DIRS:
         real_dir = os.path.realpath(allowed_dir)
@@ -1694,18 +1870,17 @@ async def api_list_files(request):
                     "size": stat.st_size,
                     "modified": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(stat.st_mtime)),
                 })
-    return web.json_response({"files": files, "dir": resolved_dir})
+    return web.json_response({"files": files, "dir": resolved_dir, "mode": "local"})
 
 
-async def api_read_file(request):
-    """GET /api/files/read?path=/data/notes.md - Read a .md file."""
+async def _local_read_file(request):
+    """Read a .md file from local filesystem."""
     path = request.query.get("path", "")
     resolved, error = _validate_editor_path(path)
     if error:
         return web.json_response({"error": error}, status=403)
     if not os.path.isfile(resolved):
         return web.json_response({"error": "File not found"}, status=404)
-    # Cap at 1MB
     size = os.path.getsize(resolved)
     if size > 1_048_576:
         return web.json_response({"error": "File too large (max 1MB)"}, status=413)
@@ -1714,11 +1889,11 @@ async def api_read_file(request):
             content = f.read()
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
-    return web.json_response({"path": resolved, "content": content, "size": size})
+    return web.json_response({"path": resolved, "content": content, "size": size, "mode": "local"})
 
 
-async def api_save_file(request):
-    """POST /api/files/save - Write a .md file."""
+async def _local_save_file(request):
+    """Save a .md file to local filesystem."""
     try:
         data = await request.json()
     except Exception:
@@ -1734,22 +1909,7 @@ async def api_save_file(request):
             f.write(content)
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
-    return web.json_response({"status": "ok", "size": len(content)})
-
-
-async def api_delete_file(request):
-    """DELETE /api/files?path=/data/notes.md - Delete a .md file."""
-    path = request.query.get("path", "")
-    resolved, error = _validate_editor_path(path)
-    if error:
-        return web.json_response({"error": error}, status=403)
-    if not os.path.isfile(resolved):
-        return web.json_response({"error": "File not found"}, status=404)
-    try:
-        os.remove(resolved)
-    except Exception as e:
-        return web.json_response({"error": str(e)}, status=500)
-    return web.json_response({"status": "ok"})
+    return web.json_response({"status": "ok", "size": len(content), "mode": "local"})
 
 
 # ──────────────────────────────────────────────
@@ -1854,10 +2014,10 @@ def create_ingress_app():
     app.router.add_post("/api/groups/{group_id}/access", api_set_group_access)
 
     # File Editor
+    app.router.add_get("/api/editor/status", api_editor_status)
     app.router.add_get("/api/files", api_list_files)
     app.router.add_get("/api/files/read", api_read_file)
     app.router.add_post("/api/files/save", api_save_file)
-    app.router.add_delete("/api/files", api_delete_file)
 
     # Also serve AI endpoints on ingress for testing
     app.router.add_get("/api/ai-sensors", api_ai_sensors)

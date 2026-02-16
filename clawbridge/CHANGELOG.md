@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.1 - Gateway Workspace Editor & Notification Fix
+
+- **Workspace Editor**: Markdown Editor now reads/writes AI workspace files (USER.md, SOUL.md, AGENTS.md, etc.) directly from the OpenClaw Gateway via `/tools/invoke`
+  - Automatically uses gateway mode when Gateway URL is configured
+  - Falls back to local `/data` file editing when no gateway is set
+  - Mode badge in editor toolbar shows "workspace" or "local"
+  - Delete button hidden in gateway mode for safety
+- **Notification Fix**: Fixed 401 Unauthorized when tapping chat notifications
+  - Deep-link URL now correctly formatted for HA Companion App navigation
+  - Added debug logging for deep-link URL troubleshooting
+
 ## 1.5.0 - Chat Notifications, Entity Groups & Markdown Editor
 
 - **Chat Notifications**: AI chat responses are now sent as HA push notifications; tapping the notification deep-links to the Chat tab via the Companion App
