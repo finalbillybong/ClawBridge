@@ -399,7 +399,7 @@ function filterEntities() { renderEntityList(); }
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-  ['dashboard', 'entities', 'audit', 'security', 'settings', 'chat', 'editor'].forEach(t => {
+  ['dashboard', 'entities', 'audit', 'security', 'settings', 'chat'].forEach(t => {
     const el = document.getElementById(`tab-${t}`);
     if (el) el.style.display = t === tab ? '' : 'none';
   });
@@ -408,7 +408,6 @@ function switchTab(tab) {
   if (tab === 'security') { loadApiKeys(); loadSchedules(); loadPendingActions(); loadGroups(); }
   if (tab === 'settings') loadPresets();
   if (tab === 'chat') initChat();
-  if (tab === 'editor') initEditor();
   if (tab === 'entities' && !activeDomain) {
     if (Object.keys(exposedEntities).length > 0) selectDomain('__exposed__');
     else { const d = Object.keys(allDomains).sort(); if (d.length) selectDomain(d[0]); }
@@ -1269,135 +1268,3 @@ async function setGroupAccess(groupId, level) {
   } catch (err) { showToast('Failed to set group access.', true); }
 }
 
-// ─── Markdown Editor ──────────────────────────
-
-let editorFiles = [];
-let editorCurrentPath = '';
-let editorPreviewMode = false;
-let editorInitialized = false;
-
-let editorMode = 'local'; // 'gateway' or 'local'
-
-async function initEditor() {
-  if (editorInitialized) return;
-  editorInitialized = true;
-
-  // Check editor mode from backend
-  try {
-    const status = await apiGet('/api/editor/status');
-    editorMode = status.mode || 'local';
-    const badge = document.getElementById('editor-mode-badge');
-    if (badge) {
-      if (editorMode === 'gateway') {
-        badge.textContent = 'workspace';
-        badge.className = 'editor-mode-badge gateway';
-        badge.title = 'Editing OpenClaw workspace files via Gateway';
-      } else {
-        badge.textContent = 'local';
-        badge.className = 'editor-mode-badge local';
-        badge.title = 'Editing local addon files';
-      }
-    }
-    // Hide delete and new buttons in gateway mode
-    const deleteBtn = document.getElementById('editor-delete-btn');
-    if (deleteBtn) deleteBtn.style.display = editorMode === 'gateway' ? 'none' : '';
-    const newBtn = document.getElementById('editor-new-btn');
-    if (newBtn) newBtn.style.display = editorMode === 'gateway' ? 'none' : '';
-  } catch (err) {
-    console.error('Editor status check failed:', err);
-  }
-
-  await loadEditorFileList();
-}
-
-async function loadEditorFileList() {
-  try {
-    // In gateway mode, no dir param needed; in local mode, use /data
-    const url = editorMode === 'gateway' ? '/api/files' : '/api/files?dir=/data';
-    const data = await apiGet(url);
-    editorFiles = data.files || [];
-    const select = document.getElementById('editor-file-select');
-    select.innerHTML = '<option value="">-- select file --</option>' +
-      editorFiles.map(f => `<option value="${escapeAttr(f.path)}">${escapeHtml(f.name)}</option>`).join('');
-    // Re-select current file if still exists
-    if (editorCurrentPath) {
-      select.value = editorCurrentPath;
-    }
-    if (editorFiles.length === 0 && editorMode === 'gateway') {
-      document.getElementById('editor-textarea').placeholder = 'No .md files found in OpenClaw workspace. Is the Gateway URL and Token configured in Settings?';
-    }
-  } catch (err) {
-    if (editorMode === 'gateway') {
-      showToast('Failed to load workspace files — check Gateway URL/Token in Settings.', true);
-      document.getElementById('editor-textarea').placeholder = 'Could not connect to OpenClaw Gateway. Check your Gateway URL and Token in Settings.';
-    } else {
-      showToast('Failed to load files.', true);
-    }
-  }
-}
-
-async function loadEditorFile() {
-  const path = document.getElementById('editor-file-select').value;
-  if (!path) {
-    editorCurrentPath = '';
-    document.getElementById('editor-textarea').value = '';
-    if (editorPreviewMode) updateEditorPreview();
-    return;
-  }
-  try {
-    const data = await apiGet(`/api/files/read?path=${encodeURIComponent(path)}`);
-    document.getElementById('editor-textarea').value = data.content || '';
-    editorCurrentPath = path;
-    if (editorPreviewMode) updateEditorPreview();
-  } catch (err) { showToast('Failed to load file.', true); }
-}
-
-async function saveEditorFile() {
-  if (!editorCurrentPath) { showToast('No file selected.', true); return; }
-  const content = document.getElementById('editor-textarea').value;
-  try {
-    await apiPost('/api/files/save', { path: editorCurrentPath, content });
-    showToast('File saved.');
-  } catch (err) { showToast('Failed to save file.', true); }
-}
-
-async function newEditorFile() {
-  const name = prompt('File name (e.g. notes.md):');
-  if (!name) return;
-  if (!name.endsWith('.md')) { showToast('File must end with .md', true); return; }
-  // In gateway mode use bare filename; in local mode prefix with /data/
-  const path = editorMode === 'gateway' ? name : '/data/' + name;
-  try {
-    await apiPost('/api/files/save', { path, content: `# ${name.replace('.md', '')}\n\n` });
-    await loadEditorFileList();
-    document.getElementById('editor-file-select').value = path;
-    await loadEditorFile();
-    showToast('File created.');
-  } catch (err) { showToast('Failed to create file.', true); }
-}
-
-async function deleteEditorFile() {
-  if (!editorCurrentPath) return;
-  if (!confirm(`Delete ${editorCurrentPath}?`)) return;
-  try {
-    await apiDelete(`/api/files?path=${encodeURIComponent(editorCurrentPath)}`);
-    editorCurrentPath = '';
-    document.getElementById('editor-textarea').value = '';
-    await loadEditorFileList();
-    if (editorPreviewMode) updateEditorPreview();
-    showToast('File deleted.');
-  } catch (err) { showToast('Failed to delete file.', true); }
-}
-
-function toggleEditorPreview() {
-  editorPreviewMode = !editorPreviewMode;
-  document.getElementById('editor-preview').style.display = editorPreviewMode ? '' : 'none';
-  document.getElementById('editor-textarea').style.display = editorPreviewMode ? 'none' : '';
-  document.getElementById('editor-preview-toggle').textContent = editorPreviewMode ? 'edit' : 'preview';
-  if (editorPreviewMode) updateEditorPreview();
-}
-
-function updateEditorPreview() {
-  const text = document.getElementById('editor-textarea').value;
-  document.getElementById('editor-preview').innerHTML = renderMarkdown(text);
-}
