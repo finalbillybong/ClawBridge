@@ -790,6 +790,7 @@ async function loadSettings() {
     document.getElementById('setting-ai-name').value = data.ai_name || '';
     document.getElementById('setting-gateway-url').value = data.gateway_url || '';
     document.getElementById('setting-gateway-token').value = data.gateway_token || '';
+    document.getElementById('setting-gateway-model').value = data.gateway_model || '';
     document.getElementById('setting-chat-notify-enabled').checked = data.chat_notify_enabled === true;
     document.getElementById('setting-chat-notify-service').value = data.chat_notify_service || '';
   } catch (err) { console.error('Failed to load settings:', err); }
@@ -811,6 +812,7 @@ async function saveSettings() {
     ai_name: document.getElementById('setting-ai-name').value.trim(),
     gateway_url: document.getElementById('setting-gateway-url').value.trim(),
     gateway_token: document.getElementById('setting-gateway-token').value.trim(),
+    gateway_model: document.getElementById('setting-gateway-model').value.trim(),
     chat_notify_enabled: document.getElementById('setting-chat-notify-enabled').checked,
     chat_notify_service: document.getElementById('setting-chat-notify-service').value.trim(),
   };
@@ -1020,6 +1022,9 @@ async function sendChatMessage() {
   chatStreaming = true;
   document.getElementById('chat-send-btn').disabled = true;
 
+  // Save history immediately so user message persists across reloads
+  try { await apiPost('/api/chat/history', { history: chatHistory }); } catch (_) {}
+
   let fullResponse = '';
 
   try {
@@ -1028,6 +1033,12 @@ async function sendChatMessage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, history: chatHistory.slice(0, -1) }),
     });
+
+    if (!resp.ok) {
+      let errMsg = `Server error (${resp.status})`;
+      try { const errData = await resp.json(); errMsg = errData.error || errMsg; } catch (_) {}
+      throw new Error(errMsg);
+    }
 
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
@@ -1101,10 +1112,12 @@ async function testGatewayConnection() {
     // Save settings first
     await saveSettings();
     const status = await apiGet('/api/chat/status');
-    if (status.configured) {
-      showToast('Gateway is configured. Try sending a message in the Chat tab.');
-    } else {
+    if (!status.configured) {
       showToast('Gateway URL is not configured. Enter a URL first.', true);
+    } else if (status.reachable) {
+      showToast('Gateway is reachable. Try sending a message in the Chat tab.');
+    } else {
+      showToast('Gateway not reachable: ' + (status.error || `HTTP ${status.status_code}`), true);
     }
   } catch (err) {
     showToast('Connection test failed: ' + err.message, true);

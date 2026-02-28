@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.3 - Chat Bug Fixes
+
+- **Fix**: Chat AI never replied — gateway payload was missing the required `model` field for OpenAI-compatible `/v1/chat/completions` endpoints
+- **Fix**: Chat messages disappeared on page reload — history was only saved after the AI response completed; now saved immediately when the user sends a message
+- **Fix**: Test Connection button gave false positives — it only checked whether the URL field was non-empty; now actually connects to the gateway (`/v1/models`) and reports reachable/unreachable with error details
+- **Fix**: Frontend silently showed "[No response]" on backend errors — added `resp.ok` check before attempting to read the response as an SSE stream; errors are now surfaced to the user
+- **Fix**: Missing `[DONE]` marker when upstream stream ended without one — backend now always sends `data: [DONE]` to properly terminate the frontend stream reader
+- **Feature**: New Gateway Model setting — configurable model name (e.g. `gpt-4o-mini`, `llama3`) sent to the gateway in the chat payload
+
 ## 1.5.2 - Remove Editor Tab
 
 - **Removed Editor tab**: The Markdown Editor feature has been removed. The gateway-mode approach (invoking OpenClaw tools via `/tools/invoke` for file operations) could not reliably read/write workspace files across separate Docker containers, and the local-mode fallback only accessed ClawBridge's own `/data` directory. All related backend endpoints (`/api/editor/status`, `/api/files`, `/api/files/read`, `/api/files/save`), frontend UI, JavaScript, and CSS have been cleaned up.

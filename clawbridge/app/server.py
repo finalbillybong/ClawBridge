@@ -350,6 +350,7 @@ async def api_get_settings(request):
         "ai_name": config_mgr.ai_name,
         "gateway_url": config_mgr.gateway_url,
         "gateway_token": config_mgr.gateway_token,
+        "gateway_model": config_mgr.gateway_model,
         "chat_notify_enabled": config_mgr.chat_notify_enabled,
         "chat_notify_service": config_mgr.chat_notify_service,
         "chat_notify_max_length": config_mgr.chat_notify_max_length,
@@ -383,6 +384,8 @@ async def api_save_settings(request):
         config_mgr.gateway_url = data["gateway_url"]
     if "gateway_token" in data:
         config_mgr.gateway_token = data["gateway_token"]
+    if "gateway_model" in data:
+        config_mgr.gateway_model = data["gateway_model"]
     if "chat_notify_enabled" in data:
         config_mgr.chat_notify_enabled = data["chat_notify_enabled"]
     if "chat_notify_service" in data:
@@ -1490,10 +1493,13 @@ async def api_chat(request):
     if gateway_token:
         headers["Authorization"] = f"Bearer {gateway_token}"
 
+    gateway_model = config_mgr.gateway_model
     payload = {
         "messages": messages,
         "stream": True,
     }
+    if gateway_model:
+        payload["model"] = gateway_model
 
     # Start SSE response
     response = web.StreamResponse(
@@ -1520,6 +1526,7 @@ async def api_chat(request):
                     await response.write(b"data: [DONE]\n\n")
                     return response
 
+                done_sent = False
                 async for line in upstream.content:
                     decoded = line.decode("utf-8", errors="replace").strip()
                     if not decoded:
@@ -1528,6 +1535,7 @@ async def api_chat(request):
                         chunk_data = decoded[6:]
                         if chunk_data == "[DONE]":
                             await response.write(b"data: [DONE]\n\n")
+                            done_sent = True
                             break
                         try:
                             chunk = json.loads(chunk_data)
@@ -1538,6 +1546,8 @@ async def api_chat(request):
                                 await response.write(f"data: {json.dumps({'content': content})}\n\n".encode())
                         except (json.JSONDecodeError, IndexError, KeyError):
                             pass
+                if not done_sent:
+                    await response.write(b"data: [DONE]\n\n")
     except asyncio.TimeoutError:
         await response.write(f"data: {json.dumps({'error': 'Gateway timeout'})}\n\n".encode())
         await response.write(b"data: [DONE]\n\n")
@@ -1578,11 +1588,47 @@ async def api_chat_history_clear(request):
 
 
 async def api_chat_status(request):
-    """Return whether gateway is configured."""
-    return web.json_response({
-        "configured": bool(config_mgr.gateway_url),
-        "has_token": bool(config_mgr.gateway_token),
-    })
+    """Return whether gateway is configured and reachable."""
+    gateway_url = config_mgr.gateway_url
+    if not gateway_url:
+        return web.json_response({
+            "configured": False,
+            "has_token": bool(config_mgr.gateway_token),
+            "reachable": False,
+            "error": "Gateway URL not configured",
+        })
+
+    # Actually test the connection
+    url = gateway_url.rstrip("/") + "/v1/models"
+    headers = {}
+    if config_mgr.gateway_token:
+        headers["Authorization"] = f"Bearer {config_mgr.gateway_token}"
+
+    try:
+        timeout = aiohttp_client.ClientTimeout(total=10)
+        async with aiohttp_client.ClientSession(timeout=timeout) as session:
+            async with session.get(url, headers=headers) as resp:
+                reachable = resp.status in (200, 404)  # 404 = endpoint not implemented but server is up
+                return web.json_response({
+                    "configured": True,
+                    "has_token": bool(config_mgr.gateway_token),
+                    "reachable": reachable,
+                    "status_code": resp.status,
+                })
+    except asyncio.TimeoutError:
+        return web.json_response({
+            "configured": True,
+            "has_token": bool(config_mgr.gateway_token),
+            "reachable": False,
+            "error": "Connection timed out",
+        })
+    except Exception as e:
+        return web.json_response({
+            "configured": True,
+            "has_token": bool(config_mgr.gateway_token),
+            "reachable": False,
+            "error": str(e),
+        })
 
 
 # ──────────────────────────────────────────────

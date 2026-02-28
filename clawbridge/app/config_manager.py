@@ -493,6 +493,15 @@ class ConfigManager:
         self._save()
 
     @property
+    def gateway_model(self):
+        return self._config.get("gateway_model", "")
+
+    @gateway_model.setter
+    def gateway_model(self, value):
+        self._config["gateway_model"] = str(value).strip() if value else ""
+        self._save()
+
+    @property
     def chat_history(self):
         return self._config.get("chat_history", [])
 
