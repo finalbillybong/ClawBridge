@@ -1,12 +1,13 @@
 # Changelog
 
-## 1.5.3 - Chat Bug Fixes
+## 1.5.4 - Chat Bug Fixes
 
 - **Fix**: Chat AI never replied — gateway payload was missing the required `model` field for OpenAI-compatible `/v1/chat/completions` endpoints
 - **Fix**: Chat messages disappeared on page reload — history was only saved after the AI response completed; now saved immediately when the user sends a message
-- **Fix**: Test Connection button gave false positives — it only checked whether the URL field was non-empty; now actually connects to the gateway (`/v1/models`) and reports reachable/unreachable with error details
+- **Fix**: Test Connection button gave false positives — it only checked whether the URL field was non-empty; now actually connects to the gateway and reports reachable/unreachable with error details
 - **Fix**: Frontend silently showed "[No response]" on backend errors — added `resp.ok` check before attempting to read the response as an SSE stream; errors are now surfaced to the user
 - **Fix**: Missing `[DONE]` marker when upstream stream ended without one — backend now always sends `data: [DONE]` to properly terminate the frontend stream reader
+- **Fix**: `ws://` and `wss://` gateway URLs now auto-converted to `http://`/`https://` for REST API calls
 - **Feature**: New Gateway Model setting — configurable model name (e.g. `gpt-4o-mini`, `llama3`) sent to the gateway in the chat payload
 
 ## 1.5.2 - Remove Editor Tab
