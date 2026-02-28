@@ -1511,6 +1511,8 @@ async def api_chat(request):
     if gateway_model:
         payload["model"] = gateway_model
 
+    logger.info("Chat proxy: POST %s (model=%s)", url, gateway_model or "<none>")
+
     # Start SSE response
     response = web.StreamResponse(
         status=200,
@@ -1559,10 +1561,11 @@ async def api_chat(request):
                 if not done_sent:
                     await response.write(b"data: [DONE]\n\n")
     except asyncio.TimeoutError:
-        await response.write(f"data: {json.dumps({'error': 'Gateway timeout'})}\n\n".encode())
+        logger.error("Chat proxy timeout connecting to %s", url)
+        await response.write(f"data: {json.dumps({'error': f'Gateway timeout connecting to {url}'})}\n\n".encode())
         await response.write(b"data: [DONE]\n\n")
     except Exception as e:
-        logger.error("Chat proxy error: %s", e)
+        logger.error("Chat proxy error connecting to %s: %s", url, e)
         await response.write(f"data: {json.dumps({'error': str(e)})}\n\n".encode())
         await response.write(b"data: [DONE]\n\n")
 
