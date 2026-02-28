@@ -13,7 +13,7 @@ RUN \
 COPY app /app
 
 # Install additional Python dependencies
-RUN pip3 install --no-cache-dir --break-system-packages aiohttp websockets
+RUN pip3 install --no-cache-dir --break-system-packages aiohttp
 
 # Copy run script and set executable permissions
 COPY run.sh /
