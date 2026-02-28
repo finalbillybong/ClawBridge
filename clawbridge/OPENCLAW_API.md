@@ -1,14 +1,32 @@
 # ClawBridge API Reference
 
-This document is the API reference for AI agents (e.g., OpenClaw) integrating with ClawBridge. ClawBridge exposes a filtered subset of Home Assistant entities and services for safe AI-controlled automation.
+This document is the API reference for AI agents (e.g., OpenClaw) integrating with ClawBridge. Give this file to your AI so it understands how to interact with your Home Assistant through ClawBridge.
 
-**Base URL:** `http://localhost:8100` (or your ClawBridge host)
+## Overview
+
+ClawBridge is a guard rail that sits between your AI and Home Assistant. Instead of connecting to HA directly (e.g., via ha-mcp), your AI connects to ClawBridge, which only exposes the entities and services the homeowner has explicitly allowed.
+
+**Base URL:** `http://<home-assistant-ip>:8100`
+
+Replace `<home-assistant-ip>` with the IP address or hostname of your Home Assistant instance (e.g., `http://192.168.1.50:8100` or `http://homeassistant.local:8100`).
+
+---
+
+## Getting Started
+
+1. **Call `GET /api/context` first.** This returns everything you need to know: which entities you can see, which you can control, any parameter constraints, time schedules, and your limitations. Start every session with this call.
+
+2. **Read entity states** with `GET /api/states` to see current values.
+
+3. **Call services** with `POST /api/services/{domain}/{service}` to control entities. ClawBridge will enforce access levels, constraints, and schedules automatically.
+
+4. **Subscribe to real-time updates** via `GET /api/websocket` if you need live state changes pushed to you.
 
 ---
 
 ## Authentication
 
-If API keys are configured, include the bearer token in requests:
+If API keys are configured, include the bearer token in every request:
 
 ```
 Authorization: Bearer cb_xxxx
@@ -20,7 +38,7 @@ If no API keys are configured, access is open and no `Authorization` header is r
 
 ## Access Levels
 
-Entities are assigned one of four access levels:
+Each entity is assigned one of four access levels by the homeowner:
 
 | Level    | Description |
 |----------|-------------|
@@ -179,11 +197,11 @@ WebSocket endpoint for real-time state changes.
 
 ---
 
-### 11. AI Context (Start Here)
+### 11. AI Context (Call This First)
 
 **GET** `/api/context`
 
-Returns a complete summary of your permissions and capabilities in a single call. **Call this first** to understand what you can see and control.
+Returns a complete summary of your permissions and capabilities in a single call. **Always call this at the start of a session** to understand what you can see and control. This avoids trial-and-error with individual endpoints.
 
 **Response:**
 ```json
@@ -442,10 +460,38 @@ if resp.status_code == 200:
 
 ---
 
+## Typical Session Flow
+
+```
+1. GET /api/context          → Discover permissions, entities, constraints
+2. GET /api/states           → Read current entity states
+3. POST /api/services/...    → Control entities (respects access levels)
+4. GET /api/actions/{id}     → Poll confirmation status (if 202 returned)
+5. GET /api/websocket        → Subscribe to real-time state changes (optional)
+```
+
+---
+
+## HTTP Status Codes
+
+| Code | Meaning |
+|------|---------|
+| 200 | Success |
+| 202 | Action queued for confirmation (confirm-level entity). Poll `/api/actions/{action_id}` for result. |
+| 400 | Bad request (missing/invalid parameters) |
+| 401 | Invalid API key |
+| 403 | Access denied — entity is read-only, not exposed, outside schedule, or domain mismatch |
+| 404 | Entity not found or not exposed |
+| 410 | Confirmation action expired |
+| 429 | Rate limit exceeded |
+
+---
+
 ## Summary Table
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| GET | `/api/context` | **Full permissions + capabilities summary (start here)** |
 | GET | `/api/` | Health check |
 | GET | `/api/config` | Config, domains, version |
 | GET | `/api/states` | All entity states |
@@ -456,6 +502,5 @@ if resp.status_code == 200:
 | GET | `/api/history/period/{timestamp}` | History (filtered) |
 | GET | `/api/actions/{action_id}` | Poll confirmation status |
 | GET | `/api/websocket` | WebSocket real-time updates |
-| GET | `/api/context` | **Full permissions + capabilities summary (start here)** |
 | GET | `/api/ai-sensors` | Legacy sensor format |
 | POST | `/api/ai-action` | Legacy action format |

@@ -1,6 +1,23 @@
 # ClawBridge
 
-AI guard rail for Home Assistant. Exposes only the entities you choose, with per-entity access levels and comprehensive security controls.
+AI guard rail for Home Assistant. Sits between your AI agent and Home Assistant, exposing only the entities you choose with per-entity access control and comprehensive security.
+
+## How It Works
+
+Without ClawBridge, AI agents (via ha-mcp, custom skills, or direct API access) get broad access to your entire Home Assistant instance. ClawBridge acts as a **controlled proxy** — your AI connects to ClawBridge instead of directly to HA, and ClawBridge enforces per-entity permissions, rate limits, and audit logging.
+
+```
+┌──────────┐        ┌─────────────┐        ┌──────────────────┐
+│ OpenClaw │ ──────▶│ ClawBridge  │ ──────▶│ Home Assistant   │
+│ (or any  │  :8100 │ (guard rail)│  HA API│ (full access)    │
+│  AI)     │◀────── │             │◀────── │                  │
+└──────────┘        └─────────────┘        └──────────────────┘
+                     Only exposes            Has all entities
+                     selected entities       and services
+                     with access levels
+```
+
+**Key difference from ha-mcp:** ha-mcp exposes your HA entities directly to the AI via MCP with HA's built-in exposed entities filter. ClawBridge replaces that with a standalone REST/WebSocket API that adds four-state access levels (off/read/confirm/control), parameter constraints, time schedules, human-in-the-loop confirmation, per-agent API keys, and full audit logging.
 
 ## Installation
 
@@ -13,94 +30,91 @@ AI guard rail for Home Assistant. Exposes only the entities you choose, with per
 4. Find **"ClawBridge"** in the add-on store and click **Install**
 5. Start the add-on and open the Web UI
 
-## What It Does
+## Quick Start
 
-- **Guard rail** between your AI agent (OpenClaw) and Home Assistant
-- Four-state per-entity access: **off** / **read** (AI sees state) / **confirm** (AI requests, human approves) / **control** (AI acts directly)
-- HA-compatible REST API on port 8100 -- standard HA client libraries work out of the box
-- WebSocket endpoint for real-time state change streaming
-- Entity annotations so AI understands what devices are and where they are
-- Parameter constraints to prevent extreme values (e.g., thermostat max 24°C)
-- Multi-agent API keys with per-key entity scoping
-- Time-based access schedules (e.g., AI can control lights 6am-11pm only)
-- Human-in-the-loop confirmation with actionable Approve/Deny push notifications (iOS + Android)
-- Customisable AI name in notifications (e.g., "OpenClaw wants to turn on Office Light")
-- Smart read-only domain detection (sensors, binary sensors, etc. only get off/read)
-- To-do list item access (AI can read item names, not just counts, via `todo.get_items`)
-- State history endpoint for AI pattern recognition
-- Audit logging and usage dashboard
-- Rate limiting and IP allowlist
+### 1. Expose entities
 
-## AI Endpoint
+Open the ClawBridge Web UI (from the HA sidebar or add-on page). Browse your entities by domain and set access levels:
 
-Point your AI agent at:
+- **off** — Hidden from AI entirely
+- **read** — AI can see state but not control
+- **confirm** — AI requests action, you approve/deny via phone notification
+- **control** — AI acts directly
+
+Click **Save** when done.
+
+### 2. Add annotations (recommended)
+
+Click the pencil icon on any entity to add a description (e.g., "Main ceiling light in the home office, 2nd floor"). These descriptions are returned in API responses so the AI understands what devices are and where they are.
+
+### 3. Create an API key (recommended)
+
+Go to the **Security** tab and create an API key. Each key can be scoped to specific entities with its own rate limit — useful if you run multiple AI agents.
+
+### 4. Connect your AI
+
+Point your AI agent at ClawBridge instead of directly at Home Assistant:
 
 ```
 http://<your-ha-ip>:8100/api/
 ```
 
-No authentication required by default. See [OPENCLAW_API.md](clawbridge/OPENCLAW_API.md) for the full API reference.
+Give your AI the [OPENCLAW_API.md](clawbridge/OPENCLAW_API.md) file so it understands the available endpoints. The AI should call `GET /api/context` first to discover its permissions and available entities.
 
-## Setting Up Your AI (OpenClaw / Custom Agent)
+If using an API key, the AI authenticates with: `Authorization: Bearer cb_xxxx`
 
-To give your AI the ability to control Home Assistant through ClawBridge:
+### 5. Verify
 
-1. **Provide the API reference** -- Give your AI the [OPENCLAW_API.md](clawbridge/OPENCLAW_API.md) file so it understands the available endpoints, authentication, access levels, and usage examples.
-2. **Generate an API key** -- In the ClawBridge UI, go to the **Security** tab and create an API key. Give this key to your AI so it can authenticate with `Authorization: Bearer <key>`.
-3. **Ask your AI to create a Home Assistant skill** -- With the API docs and key, ask your AI to build a skill/plugin that connects to ClawBridge to read entity states and call services.
+Check the **Audit** tab in the ClawBridge UI to see your AI's requests. The **Dashboard** tab shows usage stats.
 
-> **Tip:** You can scope each API key to specific entities and set per-key rate limits from the Security tab. This lets you give different agents different levels of access.
+## Migrating from ha-mcp
+
+If you're currently using ha-mcp to give OpenClaw access to Home Assistant:
+
+1. **Install ClawBridge** using the steps above
+2. **Expose entities** — Select which entities the AI should see and set access levels. ClawBridge starts with everything hidden, so you explicitly opt in.
+3. **Update your AI's configuration** — Instead of connecting via MCP to Home Assistant directly, point your AI at `http://<ha-ip>:8100`. Give it the [OPENCLAW_API.md](clawbridge/OPENCLAW_API.md) reference doc and an API key.
+4. **Remove or disable ha-mcp** — Once ClawBridge is handling all AI access, you no longer need ha-mcp. ClawBridge provides a standard HA-compatible REST API, so any AI that works with the HA API will work with ClawBridge out of the box.
+
+> **Why switch?** ha-mcp gives the AI access to everything you've exposed in HA's built-in entity filter with no granularity beyond on/off. ClawBridge adds read/confirm/control per entity, parameter constraints (e.g., thermostat max 24°C), time schedules, human-in-the-loop approval, per-agent API keys, and a full audit trail.
 
 ## Features
 
-- Four-state entity access: off / read / confirm / control
-- HA-compatible REST API (`/api/states`, `/api/services/{domain}/{service}`)
-- WebSocket real-time streaming (`/api/websocket`)
-- State history access (`/api/history/period/{timestamp}`)
-- Entity annotations (descriptions for AI context)
-- Parameter constraints with auto-clamping
-- Multi-agent API keys with entity scoping
-- Time-based access schedules
-- Human-in-the-loop confirmation with actionable phone notifications
-- Usage dashboard with analytics
-- Domain-based entity browser with real-time search
-- Audit log viewer with action history
-- Per-IP and per-key rate limiting
-- IP allowlist (optional)
-- Named presets with import/export
-- Sensitive domain warnings (lock, cover, alarm, climate, valve)
-- Read-only domain filtering (sensor, binary_sensor, weather, etc.)
-- To-do list support: read items, add, update, and remove via `todo.*` services
-- Smart constraint editor (only shows parameters the entity supports)
+- **Four-state entity access:** off / read / confirm / control
+- **HA-compatible REST API** on port 8100 (`/api/states`, `/api/services/{domain}/{service}`) — standard HA client libraries work out of the box
+- **WebSocket real-time streaming** (`/api/websocket`) — state changes pushed to connected AI clients
+- **AI context endpoint** (`/api/context`) — single call returns all permissions, entities, constraints, and schedules
+- **State history** (`/api/history/period/{timestamp}`) — for AI pattern recognition
+- **Entity annotations** — user-written descriptions visible to AI for context
+- **Parameter constraints** — min/max limits with auto-clamping (e.g., brightness 1-200)
+- **Multi-agent API keys** — per-key entity scoping and rate limits
+- **Time-based access schedules** — restrict when AI can control entities (e.g., 6am-11pm only)
+- **Human-in-the-loop confirmation** — confirm-level entities trigger Approve/Deny push notifications (iOS + Android)
+- **Entity groups** — organise entities by room/function for bulk access control
+- **Usage dashboard** with hourly charts, top entities, and action counts
+- **Audit logging** — all AI service calls logged with full action history
+- **Rate limiting** — per-IP and per-key
+- **IP allowlist** — optionally restrict which IPs can access port 8100
+- **Named presets** with import/export
+- **Sensitive domain warnings** — lock, cover, alarm, climate, valve require explicit confirmation
+- **Read-only domain detection** — sensor, binary_sensor, weather, etc. only get off/read
+- **To-do list support** — read items via `todo.get_items` (works with read access), modify with confirm/control
 
 ## Security
 
-- Only explicitly exposed entities are visible to AI
-- Read-only entities cannot be controlled (403), but can use read-safe services like `todo.get_items`
+- Only explicitly exposed entities are visible to AI — everything else is hidden
+- Read-only entities cannot be controlled (returns 403)
 - Confirm entities require human approval via phone notification (Approve/Deny buttons)
-- Parameter constraints prevent extreme AI actions
+- Parameter constraints prevent extreme AI actions (values auto-clamped)
 - Time schedules restrict when AI can act
-- API keys isolate different agents
+- API keys isolate different agents with per-key entity scoping
 - All service calls are audit-logged
 - Rate limiting prevents abuse
-- Optional IP allowlist restricts access
+- Optional IP allowlist restricts network access
 
-## Branding
+## API Reference
 
-The ClawBridge logo is a lobster claw (from OpenClaw) sitting on a bridge arch. The coral claw (`#f97066`) and sky-blue bridge (`#38bdf8`) are the brand colours used throughout.
-
-| Location | Asset |
-|----------|-------|
-| HA sidebar | `mdi:bridge` (MDI only supports standard icons; bridge is the closest brand match) |
-| Web UI (top left) | Inline SVG in `index.html` (claw + bridge, uses `currentColor`) |
-| Add-on store icon | `clawbridge/icon.png` (128x128, claw + bridge on dark bg) |
-| Add-on store logo | `clawbridge/logo.png` (~250x100, icon + "ClawBridge" text) |
-| Browser tab | SVG favicon embedded as data URI in `index.html` |
-| Master source | `clawbridge/app/static/logo.svg` |
-
-## Screenshots
-
-*Coming soon*
+See [OPENCLAW_API.md](clawbridge/OPENCLAW_API.md) for the full endpoint documentation with examples.
 
 ## Support
 
