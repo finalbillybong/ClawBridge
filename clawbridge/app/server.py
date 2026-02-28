@@ -1461,6 +1461,15 @@ async def _handle_notification_action(action_str, event_data):
 # Chat / AI Gateway Proxy
 # ──────────────────────────────────────────────
 
+
+def _normalise_gateway_url(url):
+    """Convert ws:// / wss:// to http:// / https:// for REST calls."""
+    if url.startswith("ws://"):
+        return "http://" + url[5:]
+    if url.startswith("wss://"):
+        return "https://" + url[6:]
+    return url
+
 async def api_chat(request):
     """Streaming SSE proxy to OpenClaw Gateway /v1/chat/completions."""
     gateway_url = config_mgr.gateway_url
@@ -1488,6 +1497,7 @@ async def api_chat(request):
     messages.append({"role": "user", "content": user_message})
 
     # Prepare gateway request
+    gateway_url = _normalise_gateway_url(gateway_url)
     url = gateway_url.rstrip("/") + "/v1/chat/completions"
     headers = {"Content-Type": "application/json"}
     if gateway_token:
@@ -1599,6 +1609,7 @@ async def api_chat_status(request):
         })
 
     # Actually test the connection — try base URL, any HTTP response means reachable
+    gateway_url = _normalise_gateway_url(gateway_url)
     url = gateway_url.rstrip("/") + "/"
     headers = {}
     if config_mgr.gateway_token:
