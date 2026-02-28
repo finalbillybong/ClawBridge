@@ -17,7 +17,19 @@ Without ClawBridge, AI agents (via ha-mcp, custom skills, or direct API access) 
                      with access levels
 ```
 
-**Key difference from ha-mcp:** ha-mcp exposes your HA entities directly to the AI via MCP with HA's built-in exposed entities filter. ClawBridge replaces that with a standalone REST/WebSocket API that adds four-state access levels (off/read/confirm/control), parameter constraints, time schedules, human-in-the-loop confirmation, per-agent API keys, and full audit logging.
+### ClawBridge vs HA MCP / ha-mcp
+
+| Feature | HA MCP / ha-mcp | ClawBridge |
+|---------|----------------|------------|
+| Entity filtering | On/off per entity | **Four-state**: off / read / confirm / control |
+| Human-in-the-loop | No | **Approve/Deny push notifications** for confirm-level entities |
+| Parameter constraints | No | **Min/max limits** with auto-clamping (e.g., thermostat max 24°C) |
+| Time-based schedules | No | **Restrict when AI can act** (e.g., lights only 6am-11pm) |
+| Per-agent API keys | Single HA token | **Multiple keys** with per-key entity scoping and rate limits |
+| Audit logging | No | **Full action log** with dashboard analytics |
+| Rate limiting | No | **Per-IP and per-key** |
+| Entity annotations | No | **Descriptions visible to AI** for context |
+| Entity groups | No | **Bulk access control** by room/function |
 
 ## Installation
 
