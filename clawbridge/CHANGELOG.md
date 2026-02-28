@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.7.0 - Remove Chat Feature
+
+- **Removed**: Chat tab and all AI Gateway proxy functionality — ClawBridge now focuses exclusively on exposing HA entities to OpenClaw with access control
+- **Removed**: Gateway URL, Gateway Token, Gateway Model settings
+- **Removed**: Chat notification settings (enable, service, max length)
+- **Removed**: Backend endpoints: `POST /api/chat`, `GET/POST/DELETE /api/chat/history`, `GET /api/chat/status`
+- **Removed**: `host_network: true` from add-on config (was only needed for chat Docker networking)
+
 ## 1.6.0 - Native OpenClaw WebSocket Chat
 
 - **Rewrite**: Chat proxy now uses OpenClaw's native WebSocket protocol instead of the OpenAI-compatible REST API (`/v1/chat/completions`) which does not exist on the OpenClaw gateway

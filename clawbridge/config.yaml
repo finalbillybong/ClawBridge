@@ -1,6 +1,6 @@
 name: "ClawBridge"
 description: "AI guard rail for Home Assistant with per-entity access control."
-version: "1.6.1"
+version: "1.7.0"
 slug: "clawbridge"
 url: "https://github.com/finalbillybong/ClawBridge"
 arch:
@@ -10,7 +10,6 @@ arch:
   - armv7
   - i386
 init: false
-host_network: true
 homeassistant_api: true
 ingress: true
 ingress_port: 8099

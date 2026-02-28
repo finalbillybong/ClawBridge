@@ -46,14 +46,6 @@ DEFAULT_CONFIG = {
     "confirm_notify_service": "",
     # AI display name for notifications
     "ai_name": "AI",
-    # Chat / AI Gateway
-    "gateway_url": "",
-    "gateway_token": "",
-    "chat_history": [],
-    # Chat notifications
-    "chat_notify_enabled": False,
-    "chat_notify_service": "",       # empty = fall back to confirm_notify_service
-    "chat_notify_max_length": 500,
     # Entity groups: { group_id: { "name": str, "entities": [entity_id, ...], "icon": str } }
     "entity_groups": {},
 }
@@ -470,76 +462,6 @@ class ConfigManager:
     @ai_name.setter
     def ai_name(self, value):
         self._config["ai_name"] = str(value)[:50].strip() if value else "AI"
-        self._save()
-
-    # ── Chat / AI Gateway ─────────────────────────
-
-    @property
-    def gateway_url(self):
-        return self._config.get("gateway_url", "")
-
-    @gateway_url.setter
-    def gateway_url(self, value):
-        self._config["gateway_url"] = str(value).strip() if value else ""
-        self._save()
-
-    @property
-    def gateway_token(self):
-        return self._config.get("gateway_token", "")
-
-    @gateway_token.setter
-    def gateway_token(self, value):
-        self._config["gateway_token"] = str(value).strip() if value else ""
-        self._save()
-
-    @property
-    def gateway_model(self):
-        return self._config.get("gateway_model", "")
-
-    @gateway_model.setter
-    def gateway_model(self, value):
-        self._config["gateway_model"] = str(value).strip() if value else ""
-        self._save()
-
-    @property
-    def chat_history(self):
-        return self._config.get("chat_history", [])
-
-    @chat_history.setter
-    def chat_history(self, value):
-        if not isinstance(value, list):
-            value = []
-        # Cap at 200 messages
-        self._config["chat_history"] = value[-200:]
-        self._save()
-
-    # ── Chat Notifications ─────────────────────────
-
-    @property
-    def chat_notify_enabled(self):
-        return self._config.get("chat_notify_enabled", False)
-
-    @chat_notify_enabled.setter
-    def chat_notify_enabled(self, value):
-        self._config["chat_notify_enabled"] = bool(value)
-        self._save()
-
-    @property
-    def chat_notify_service(self):
-        return self._config.get("chat_notify_service", "")
-
-    @chat_notify_service.setter
-    def chat_notify_service(self, value):
-        self._config["chat_notify_service"] = str(value).strip() if value else ""
-        self._save()
-
-    @property
-    def chat_notify_max_length(self):
-        return self._config.get("chat_notify_max_length", 500)
-
-    @chat_notify_max_length.setter
-    def chat_notify_max_length(self, value):
-        self._config["chat_notify_max_length"] = max(50, min(2000, int(value)))
         self._save()
 
     # ── Entity Groups ──────────────────────────────

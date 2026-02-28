@@ -64,10 +64,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('sensitive-confirm-check').addEventListener('change', (e) => {
     document.getElementById('sensitive-confirm-btn').disabled = !e.target.checked;
   });
-  // Deep-link: #chat from notification tap
-  if (window.location.hash === '#chat') {
-    switchTab('chat');
-  }
 });
 
 // ─── Mobile Sidebar ─────────────────────────────
@@ -399,7 +395,7 @@ function filterEntities() { renderEntityList(); }
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-  ['dashboard', 'entities', 'audit', 'security', 'settings', 'chat'].forEach(t => {
+  ['dashboard', 'entities', 'audit', 'security', 'settings'].forEach(t => {
     const el = document.getElementById(`tab-${t}`);
     if (el) el.style.display = t === tab ? '' : 'none';
   });
@@ -407,7 +403,6 @@ function switchTab(tab) {
   if (tab === 'audit') loadAuditLogs();
   if (tab === 'security') { loadApiKeys(); loadSchedules(); loadPendingActions(); loadGroups(); }
   if (tab === 'settings') loadPresets();
-  if (tab === 'chat') initChat();
   if (tab === 'entities' && !activeDomain) {
     if (Object.keys(exposedEntities).length > 0) selectDomain('__exposed__');
     else { const d = Object.keys(allDomains).sort(); if (d.length) selectDomain(d[0]); }
@@ -788,11 +783,6 @@ async function loadSettings() {
     document.getElementById('setting-confirm-timeout').value = data.confirm_timeout_seconds || 120;
     document.getElementById('setting-confirm-notify').value = data.confirm_notify_service || '';
     document.getElementById('setting-ai-name').value = data.ai_name || '';
-    document.getElementById('setting-gateway-url').value = data.gateway_url || '';
-    document.getElementById('setting-gateway-token').value = data.gateway_token || '';
-    document.getElementById('setting-gateway-model').value = data.gateway_model || '';
-    document.getElementById('setting-chat-notify-enabled').checked = data.chat_notify_enabled === true;
-    document.getElementById('setting-chat-notify-service').value = data.chat_notify_service || '';
   } catch (err) { console.error('Failed to load settings:', err); }
 }
 
@@ -810,11 +800,6 @@ async function saveSettings() {
     confirm_timeout_seconds: parseInt(document.getElementById('setting-confirm-timeout').value, 10),
     confirm_notify_service: document.getElementById('setting-confirm-notify').value.trim(),
     ai_name: document.getElementById('setting-ai-name').value.trim(),
-    gateway_url: document.getElementById('setting-gateway-url').value.trim(),
-    gateway_token: document.getElementById('setting-gateway-token').value.trim(),
-    gateway_model: document.getElementById('setting-gateway-model').value.trim(),
-    chat_notify_enabled: document.getElementById('setting-chat-notify-enabled').checked,
-    chat_notify_service: document.getElementById('setting-chat-notify-service').value.trim(),
   };
   try { await apiPost('/api/settings', settings); showToast('Settings saved.'); }
   catch (err) { showToast('Failed to save settings.', true); }
@@ -902,226 +887,6 @@ function escapeHtml(str) {
 
 function escapeAttr(str) {
   return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-}
-
-// ─── Chat ──────────────────────────────────────
-
-let chatHistory = [];
-let chatInitialized = false;
-let chatStreaming = false;
-
-async function initChat() {
-  if (chatInitialized) return;
-  chatInitialized = true;
-  try {
-    const status = await apiGet('/api/chat/status');
-    const statusEl = document.getElementById('chat-status');
-    if (status.configured) {
-      statusEl.textContent = 'connected';
-      statusEl.className = 'chat-status chat-status-ok';
-    } else {
-      statusEl.textContent = 'not configured';
-      statusEl.className = 'chat-status';
-    }
-    // Load history
-    const data = await apiGet('/api/chat/history');
-    chatHistory = data.history || [];
-    renderChatMessages();
-  } catch (err) {
-    console.error('Chat init error:', err);
-  }
-}
-
-function renderChatMessages() {
-  const container = document.getElementById('chat-messages');
-  const emptyEl = document.getElementById('chat-empty');
-  if (chatHistory.length === 0) {
-    emptyEl.style.display = '';
-    // Remove any message bubbles
-    container.querySelectorAll('.chat-bubble').forEach(b => b.remove());
-    return;
-  }
-  emptyEl.style.display = 'none';
-  // Clear old bubbles
-  container.querySelectorAll('.chat-bubble').forEach(b => b.remove());
-  chatHistory.forEach(msg => {
-    const bubble = document.createElement('div');
-    bubble.className = `chat-bubble chat-${msg.role}`;
-    bubble.innerHTML = renderMarkdown(msg.content || '');
-    container.appendChild(bubble);
-  });
-  container.scrollTop = container.scrollHeight;
-}
-
-function renderMarkdown(text) {
-  if (!text) return '';
-  // Escape HTML first
-  let html = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  // Code blocks ```
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-    return `<pre><code class="lang-${lang}">${code.trim()}</code></pre>`;
-  });
-  // Inline code `...`
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  // Headers (must be before bold)
-  html = html.replace(/^######\s+(.+)$/gm, '<h6>$1</h6>');
-  html = html.replace(/^#####\s+(.+)$/gm, '<h5>$1</h5>');
-  html = html.replace(/^####\s+(.+)$/gm, '<h4>$1</h4>');
-  html = html.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
-  html = html.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
-  html = html.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
-  // Horizontal rule
-  html = html.replace(/^---+$/gm, '<hr>');
-  // Blockquotes
-  html = html.replace(/^&gt;\s+(.+)$/gm, '<blockquote>$1</blockquote>');
-  // Bold **...**
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  // Italic *...*
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  // Links [text](url)
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-  // Unordered lists
-  html = html.replace(/^[\-\*]\s+(.+)$/gm, '<li>$1</li>');
-  // Wrap consecutive <li> in <ul>
-  html = html.replace(/(<li>[\s\S]*?<\/li>)(\n?<li>)/g, '$1$2');
-  html = html.replace(/((?:<li>[\s\S]*?<\/li>\n?)+)/g, '<ul>$1</ul>');
-  // Ordered lists
-  html = html.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
-  // Line breaks (but clean up around block elements)
-  html = html.replace(/\n/g, '<br>');
-  html = html.replace(/<\/h([1-6])><br>/g, '</h$1>');
-  html = html.replace(/<\/blockquote><br>/g, '</blockquote>');
-  html = html.replace(/<\/li><br>/g, '</li>');
-  html = html.replace(/<\/ul><br>/g, '</ul>');
-  html = html.replace(/<hr><br>/g, '<hr>');
-  html = html.replace(/<\/pre><br>/g, '</pre>');
-  return html;
-}
-
-async function sendChatMessage() {
-  if (chatStreaming) return;
-  const input = document.getElementById('chat-input');
-  const message = input.value.trim();
-  if (!message) return;
-
-  input.value = '';
-  autoResizeChatInput();
-
-  // Add user message
-  chatHistory.push({ role: 'user', content: message });
-  renderChatMessages();
-
-  // Create streaming bubble
-  const container = document.getElementById('chat-messages');
-  const bubble = document.createElement('div');
-  bubble.className = 'chat-bubble chat-assistant chat-streaming';
-  bubble.innerHTML = '<span class="chat-cursor"></span>';
-  container.appendChild(bubble);
-  container.scrollTop = container.scrollHeight;
-
-  chatStreaming = true;
-  document.getElementById('chat-send-btn').disabled = true;
-
-  // Save history immediately so user message persists across reloads
-  try { await apiPost('/api/chat/history', { history: chatHistory }); } catch (_) {}
-
-  let fullResponse = '';
-
-  try {
-    const resp = await fetch(`${BASE_PATH}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, history: chatHistory.slice(0, -1) }),
-    });
-
-    if (!resp.ok) {
-      let errMsg = `Server error (${resp.status})`;
-      try { const errData = await resp.json(); errMsg = errData.error || errMsg; } catch (_) {}
-      throw new Error(errMsg);
-    }
-
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('data: ')) continue;
-        const payload = trimmed.slice(6);
-        if (payload === '[DONE]') break;
-        try {
-          const data = JSON.parse(payload);
-          if (data.error) {
-            fullResponse += `\n[Error: ${data.error}]`;
-          } else if (data.content) {
-            fullResponse += data.content;
-          }
-          bubble.innerHTML = renderMarkdown(fullResponse) + '<span class="chat-cursor"></span>';
-          container.scrollTop = container.scrollHeight;
-        } catch (_) {}
-      }
-    }
-  } catch (err) {
-    fullResponse += `\n[Connection error: ${err.message}]`;
-  }
-
-  // Finalize
-  bubble.classList.remove('chat-streaming');
-  bubble.innerHTML = renderMarkdown(fullResponse || '[No response]');
-  chatStreaming = false;
-  document.getElementById('chat-send-btn').disabled = false;
-
-  // Save to history
-  chatHistory.push({ role: 'assistant', content: fullResponse });
-  try {
-    await apiPost('/api/chat/history', { history: chatHistory });
-  } catch (_) {}
-  container.scrollTop = container.scrollHeight;
-}
-
-async function clearChatHistory() {
-  chatHistory = [];
-  renderChatMessages();
-  try { await apiDelete('/api/chat/history'); } catch (_) {}
-  showToast('Chat cleared.');
-}
-
-function handleChatKeydown(event) {
-  if (event.key === 'Enter' && !event.shiftKey) {
-    event.preventDefault();
-    sendChatMessage();
-  }
-}
-
-function autoResizeChatInput() {
-  const el = document.getElementById('chat-input');
-  el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-}
-
-async function testGatewayConnection() {
-  try {
-    // Save settings first
-    await saveSettings();
-    const status = await apiGet('/api/chat/status');
-    if (!status.configured) {
-      showToast('Gateway URL is not configured. Enter a URL first.', true);
-    } else if (status.reachable) {
-      showToast('Gateway is reachable. Try sending a message in the Chat tab.');
-    } else {
-      showToast('Gateway not reachable: ' + (status.error || `HTTP ${status.status_code}`), true);
-    }
-  } catch (err) {
-    showToast('Connection test failed: ' + err.message, true);
-  }
 }
 
 // ─── Entity Groups ────────────────────────────
