@@ -1608,23 +1608,23 @@ async def api_chat_status(request):
             "error": "Gateway URL not configured",
         })
 
-    # Actually test the connection — try base URL, any HTTP response means reachable
-    gateway_url = _normalise_gateway_url(gateway_url)
-    url = gateway_url.rstrip("/") + "/"
-    headers = {}
-    if config_mgr.gateway_token:
-        headers["Authorization"] = f"Bearer {config_mgr.gateway_token}"
+    # Test reachability with a TCP connect to the gateway host:port
+    from urllib.parse import urlparse
+    parsed = urlparse(_normalise_gateway_url(gateway_url))
+    host = parsed.hostname
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
 
     try:
-        timeout = aiohttp_client.ClientTimeout(total=10)
-        async with aiohttp_client.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers=headers) as resp:
-                return web.json_response({
-                    "configured": True,
-                    "has_token": bool(config_mgr.gateway_token),
-                    "reachable": True,
-                    "status_code": resp.status,
-                })
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port), timeout=5
+        )
+        writer.close()
+        await writer.wait_closed()
+        return web.json_response({
+            "configured": True,
+            "has_token": bool(config_mgr.gateway_token),
+            "reachable": True,
+        })
     except asyncio.TimeoutError:
         return web.json_response({
             "configured": True,

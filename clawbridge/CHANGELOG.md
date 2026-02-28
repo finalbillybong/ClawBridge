@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.5.4 - Chat Bug Fixes
+## 1.5.5 - Chat Bug Fixes
 
 - **Fix**: Chat AI never replied — gateway payload was missing the required `model` field for OpenAI-compatible `/v1/chat/completions` endpoints
 - **Fix**: Chat messages disappeared on page reload — history was only saved after the AI response completed; now saved immediately when the user sends a message
