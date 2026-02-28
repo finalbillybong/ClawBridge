@@ -1,14 +1,20 @@
 # Changelog
 
-## 1.5.5 - Chat Bug Fixes
+## 1.6.0 - Native OpenClaw WebSocket Chat
 
-- **Fix**: Chat AI never replied — gateway payload was missing the required `model` field for OpenAI-compatible `/v1/chat/completions` endpoints
-- **Fix**: Chat messages disappeared on page reload — history was only saved after the AI response completed; now saved immediately when the user sends a message
-- **Fix**: Test Connection button gave false positives — it only checked whether the URL field was non-empty; now actually connects to the gateway and reports reachable/unreachable with error details
-- **Fix**: Frontend silently showed "[No response]" on backend errors — added `resp.ok` check before attempting to read the response as an SSE stream; errors are now surfaced to the user
-- **Fix**: Missing `[DONE]` marker when upstream stream ended without one — backend now always sends `data: [DONE]` to properly terminate the frontend stream reader
-- **Fix**: `ws://` and `wss://` gateway URLs now auto-converted to `http://`/`https://` for REST API calls
-- **Feature**: New Gateway Model setting — configurable model name (e.g. `gpt-4o-mini`, `llama3`) sent to the gateway in the chat payload
+- **Rewrite**: Chat proxy now uses OpenClaw's native WebSocket protocol instead of the OpenAI-compatible REST API (`/v1/chat/completions`) which does not exist on the OpenClaw gateway
+  - Full WebSocket handshake: `connect.challenge` → `connect` → `hello-ok`
+  - Sends messages via `chat.send` method with streaming `chat.event` deltas
+  - Handles `delta`, `final`, `error`, and `aborted` states
+  - Token authentication via the gateway token setting
+- **Fix**: Test Connection now performs a real WebSocket handshake with the gateway, verifying both connectivity and authentication
+- **Fix**: Chat messages disappeared on page reload — history now saved immediately when user sends a message
+- **Fix**: Frontend silently showed "[No response]" on backend errors — added `resp.ok` check; errors are now surfaced to the user
+- **Feature**: New Gateway Model setting (for future use with OpenAI-compatible gateways)
+
+## 1.5.5 - Chat Bug Fixes (Superseded by 1.6.0)
+
+- Intermediate fixes for REST-based chat proxy (replaced by WebSocket in 1.6.0)
 
 ## 1.5.2 - Remove Editor Tab
 

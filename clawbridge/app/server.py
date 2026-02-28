@@ -1462,16 +1462,72 @@ async def _handle_notification_action(action_str, event_data):
 # ──────────────────────────────────────────────
 
 
-def _normalise_gateway_url(url):
-    """Convert ws:// / wss:// to http:// / https:// for REST calls."""
-    if url.startswith("ws://"):
-        return "http://" + url[5:]
-    if url.startswith("wss://"):
-        return "https://" + url[6:]
+def _normalise_gateway_ws(url):
+    """Ensure gateway URL uses ws:// or wss:// for WebSocket."""
+    if url.startswith("http://"):
+        return "ws://" + url[7:]
+    if url.startswith("https://"):
+        return "wss://" + url[8:]
+    if not url.startswith("ws://") and not url.startswith("wss://"):
+        return "ws://" + url
     return url
 
+
+async def _gateway_ws_handshake(ws, gateway_token):
+    """Complete OpenClaw gateway handshake. Returns hello-ok payload or raises."""
+    import uuid
+
+    # Step 1: Wait for connect.challenge
+    challenge_raw = await asyncio.wait_for(ws.recv(), timeout=10)
+    challenge = json.loads(challenge_raw)
+    if challenge.get("type") != "event" or challenge.get("event") != "connect.challenge":
+        raise RuntimeError(f"Expected connect.challenge, got: {challenge.get('type')}:{challenge.get('event', '')}")
+
+    # Step 2: Send connect request
+    connect_id = str(uuid.uuid4())
+    connect_msg = {
+        "type": "req",
+        "id": connect_id,
+        "method": "connect",
+        "params": {
+            "minProtocol": 3,
+            "maxProtocol": 3,
+            "client": {
+                "id": "clawbridge",
+                "displayName": "ClawBridge",
+                "version": config_mgr._config.get("version", "1.0.0"),
+                "platform": "homeassistant",
+                "mode": "webchat",
+            },
+            "auth": {},
+            "role": "operator",
+            "scopes": ["operator.admin"],
+        },
+    }
+    if gateway_token:
+        connect_msg["params"]["auth"]["token"] = gateway_token
+
+    await ws.send(json.dumps(connect_msg))
+
+    # Step 3: Wait for hello-ok or error
+    hello_raw = await asyncio.wait_for(ws.recv(), timeout=10)
+    hello = json.loads(hello_raw)
+
+    # hello-ok can be type "hello-ok" or a res with ok=true
+    if hello.get("type") == "hello-ok":
+        return hello
+    if hello.get("type") == "res" and hello.get("ok"):
+        return hello
+    # Auth failed
+    error_msg = "Authentication failed"
+    if hello.get("error"):
+        err = hello["error"]
+        error_msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+    raise RuntimeError(error_msg)
+
+
 async def api_chat(request):
-    """Streaming SSE proxy to OpenClaw Gateway /v1/chat/completions."""
+    """Streaming SSE proxy to OpenClaw Gateway via WebSocket."""
     gateway_url = config_mgr.gateway_url
     gateway_token = config_mgr.gateway_token
     if not gateway_url:
@@ -1483,37 +1539,19 @@ async def api_chat(request):
         return web.json_response({"error": "Invalid JSON"}, status=400)
 
     user_message = data.get("message", "").strip()
-    history = data.get("history", [])
     if not user_message:
         return web.json_response({"error": "Empty message"}, status=400)
 
-    # Build OpenAI-format messages (last 6 turns + new)
-    messages = []
-    for msg in history[-12:]:  # last 6 turns (user+assistant each)
-        role = msg.get("role", "user")
-        content = msg.get("content", "")
-        if role in ("user", "assistant", "system") and content:
-            messages.append({"role": role, "content": content})
-    messages.append({"role": "user", "content": user_message})
+    import uuid
+    try:
+        from websockets.asyncio.client import connect as ws_connect
+    except ImportError:
+        from websockets import connect as ws_connect
 
-    # Prepare gateway request
-    gateway_url = _normalise_gateway_url(gateway_url)
-    url = gateway_url.rstrip("/") + "/v1/chat/completions"
-    headers = {"Content-Type": "application/json"}
-    if gateway_token:
-        headers["Authorization"] = f"Bearer {gateway_token}"
+    ws_url = _normalise_gateway_ws(gateway_url)
+    logger.info("Chat proxy: WS %s", ws_url)
 
-    gateway_model = config_mgr.gateway_model
-    payload = {
-        "messages": messages,
-        "stream": True,
-    }
-    if gateway_model:
-        payload["model"] = gateway_model
-
-    logger.info("Chat proxy: POST %s (model=%s)", url, gateway_model or "<none>")
-
-    # Start SSE response
+    # Start SSE response to frontend
     response = web.StreamResponse(
         status=200,
         reason="OK",
@@ -1526,48 +1564,87 @@ async def api_chat(request):
     )
     await response.prepare(request)
 
-    full_response_text = ""  # accumulate for notification
+    full_response_text = ""
 
     try:
-        timeout = aiohttp_client.ClientTimeout(total=120)
-        async with aiohttp_client.ClientSession(timeout=timeout) as session:
-            async with session.post(url, json=payload, headers=headers) as upstream:
-                if upstream.status != 200:
-                    error_text = await upstream.text()
-                    await response.write(f"data: {json.dumps({'error': error_text})}\n\n".encode())
-                    await response.write(b"data: [DONE]\n\n")
-                    return response
+        async with ws_connect(ws_url, open_timeout=10) as ws:
+            # Handshake
+            await _gateway_ws_handshake(ws, gateway_token)
+            logger.info("Chat proxy: handshake complete")
 
-                done_sent = False
-                async for line in upstream.content:
-                    decoded = line.decode("utf-8", errors="replace").strip()
-                    if not decoded:
-                        continue
-                    if decoded.startswith("data: "):
-                        chunk_data = decoded[6:]
-                        if chunk_data == "[DONE]":
-                            await response.write(b"data: [DONE]\n\n")
-                            done_sent = True
+            # Send chat message
+            chat_id = str(uuid.uuid4())
+            chat_msg = {
+                "type": "req",
+                "id": chat_id,
+                "method": "chat.send",
+                "params": {
+                    "sessionKey": "main",
+                    "message": user_message,
+                    "idempotencyKey": str(uuid.uuid4()),
+                },
+            }
+            await ws.send(json.dumps(chat_msg))
+
+            # Read events until final/error/aborted
+            while True:
+                try:
+                    msg_raw = await asyncio.wait_for(ws.recv(), timeout=120)
+                except asyncio.TimeoutError:
+                    logger.error("Chat proxy: response timeout")
+                    await response.write(f"data: {json.dumps({'error': 'Gateway response timeout'})}\n\n".encode())
+                    break
+
+                msg = json.loads(msg_raw)
+
+                # Handle chat.event stream
+                if msg.get("type") == "event" and msg.get("event") == "chat.event":
+                    payload = msg.get("payload", {})
+                    state = payload.get("state", "")
+
+                    if state in ("delta", "final"):
+                        message = payload.get("message", {})
+                        for part in message.get("content", []):
+                            if part.get("type") == "text":
+                                text = part.get("text", "")
+                                # Deltas contain accumulated text; extract new portion
+                                if text and len(text) > len(full_response_text):
+                                    new_text = text[len(full_response_text):]
+                                    full_response_text = text
+                                    await response.write(
+                                        f"data: {json.dumps({'content': new_text})}\n\n".encode()
+                                    )
+                        if state == "final":
                             break
-                        try:
-                            chunk = json.loads(chunk_data)
-                            delta = chunk.get("choices", [{}])[0].get("delta", {})
-                            content = delta.get("content", "")
-                            if content:
-                                full_response_text += content
-                                await response.write(f"data: {json.dumps({'content': content})}\n\n".encode())
-                        except (json.JSONDecodeError, IndexError, KeyError):
-                            pass
-                if not done_sent:
-                    await response.write(b"data: [DONE]\n\n")
+
+                    elif state == "error":
+                        error_msg = payload.get("errorMessage", "Unknown gateway error")
+                        logger.error("Chat proxy: gateway error: %s", error_msg)
+                        await response.write(f"data: {json.dumps({'error': error_msg})}\n\n".encode())
+                        break
+
+                    elif state == "aborted":
+                        await response.write(f"data: {json.dumps({'error': 'Response aborted'})}\n\n".encode())
+                        break
+
+                # Handle error response to our chat.send request
+                elif msg.get("type") == "res" and msg.get("id") == chat_id and not msg.get("ok"):
+                    err = msg.get("error", {})
+                    error_msg = err.get("message", "Chat request rejected") if isinstance(err, dict) else str(err)
+                    logger.error("Chat proxy: request rejected: %s", error_msg)
+                    await response.write(f"data: {json.dumps({'error': error_msg})}\n\n".encode())
+                    break
+
+                # Skip tick, presence, and other non-chat events
+
     except asyncio.TimeoutError:
-        logger.error("Chat proxy timeout connecting to %s", url)
-        await response.write(f"data: {json.dumps({'error': f'Gateway timeout connecting to {url}'})}\n\n".encode())
-        await response.write(b"data: [DONE]\n\n")
+        logger.error("Chat proxy: connection timeout to %s", ws_url)
+        await response.write(f"data: {json.dumps({'error': 'Gateway connection timeout'})}\n\n".encode())
     except Exception as e:
-        logger.error("Chat proxy error connecting to %s: %s", url, e)
+        logger.error("Chat proxy error: %s", e)
         await response.write(f"data: {json.dumps({'error': str(e)})}\n\n".encode())
-        await response.write(b"data: [DONE]\n\n")
+
+    await response.write(b"data: [DONE]\n\n")
 
     # Send chat notification (fire-and-forget)
     if full_response_text.strip():
@@ -1601,7 +1678,7 @@ async def api_chat_history_clear(request):
 
 
 async def api_chat_status(request):
-    """Return whether gateway is configured and reachable."""
+    """Test gateway connectivity with a full WebSocket handshake."""
     gateway_url = config_mgr.gateway_url
     if not gateway_url:
         return web.json_response({
@@ -1611,23 +1688,21 @@ async def api_chat_status(request):
             "error": "Gateway URL not configured",
         })
 
-    # Test reachability with a TCP connect to the gateway host:port
-    from urllib.parse import urlparse
-    parsed = urlparse(_normalise_gateway_url(gateway_url))
-    host = parsed.hostname
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        from websockets.asyncio.client import connect as ws_connect
+    except ImportError:
+        from websockets import connect as ws_connect
+
+    ws_url = _normalise_gateway_ws(gateway_url)
 
     try:
-        _, writer = await asyncio.wait_for(
-            asyncio.open_connection(host, port), timeout=5
-        )
-        writer.close()
-        await writer.wait_closed()
-        return web.json_response({
-            "configured": True,
-            "has_token": bool(config_mgr.gateway_token),
-            "reachable": True,
-        })
+        async with ws_connect(ws_url, open_timeout=10) as ws:
+            await _gateway_ws_handshake(ws, config_mgr.gateway_token)
+            return web.json_response({
+                "configured": True,
+                "has_token": bool(config_mgr.gateway_token),
+                "reachable": True,
+            })
     except asyncio.TimeoutError:
         return web.json_response({
             "configured": True,
