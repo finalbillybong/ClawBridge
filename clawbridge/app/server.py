@@ -975,6 +975,51 @@ async def ha_api_history(request):
     return web.json_response(history, headers=CORS_HEADERS)
 
 
+# ── Long-term statistics endpoint (public) ────────────────
+
+async def ha_api_statistics(request):
+    """GET /api/history/statistics - Proxy HA long-term statistics for exposed entities only."""
+    ip = _get_client_ip(request)
+    if not _check_ip_allowlist(ip):
+        return web.json_response({"message": "IP not allowed"}, status=403, headers=CORS_HEADERS)
+
+    # Stricter rate limit for statistics queries
+    if not _check_rate_limit(ip + "_history", 10):
+        return web.json_response(
+            {"message": "History rate limit exceeded (10/min)"}, status=429, headers=CORS_HEADERS
+        )
+
+    key_id, key_config = _check_api_key(request)
+    if key_id is None:
+        return web.json_response({"message": "Invalid API key"}, status=401, headers=CORS_HEADERS)
+
+    effective = _get_effective_entities(key_config)
+
+    start_time = request.query.get("start_time")
+    end_time = request.query.get("end_time")
+    period = request.query.get("period", "hour")
+
+    # Filter requested statistic_ids to only exposed ones
+    requested = request.query.get("statistic_ids", "")
+    if requested:
+        requested_ids = [e.strip() for e in requested.split(",")]
+        statistic_ids = [sid for sid in requested_ids if sid in effective]
+    else:
+        statistic_ids = list(effective.keys())
+
+    if not statistic_ids:
+        return web.json_response({}, headers=CORS_HEADERS)
+
+    # Cap to 20 entities per statistics query for performance
+    statistic_ids = statistic_ids[:20]
+
+    statistics = await ha_client.get_statistics(start_time, statistic_ids, end_time, period)
+
+    # Filter response to only include exposed entities
+    filtered = {k: v for k, v in statistics.items() if k in effective}
+    return web.json_response(filtered, headers=CORS_HEADERS)
+
+
 # ── Context endpoint (public) ────────────────
 
 async def ha_api_context(request):
@@ -1572,6 +1617,7 @@ def create_public_app():
     app.router.add_get("/api/context", ha_api_context)
     app.router.add_get("/api/constraints", ha_api_get_constraints)
     app.router.add_get("/api/history/period/{timestamp}", ha_api_history)
+    app.router.add_get("/api/history/statistics", ha_api_statistics)
     app.router.add_get("/api/actions/{action_id}", ha_api_action_status)
 
     # WebSocket
