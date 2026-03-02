@@ -59,6 +59,7 @@ All other domains (including `light`, `switch`, `climate`, `todo`, `calendar`, `
 | `POST` | `/api/services/{domain}/{service}` | Call a service (control = immediate; confirm = 202 queued) |
 | `GET` | `/api/context` | Full AI context: permissions, entities, annotations, constraints, schedules, services |
 | `GET` | `/api/history/period` | State history (proxy HA history API, filtered to exposed entities) |
+| `GET` | `/api/history/statistics` | Long-term statistics (proxy HA statistics API, filtered to exposed entities) |
 
 ### Legacy Endpoints
 

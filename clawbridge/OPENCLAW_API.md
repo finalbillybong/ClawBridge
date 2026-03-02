@@ -166,7 +166,43 @@ Proxies to Home Assistant history API, filtered to exposed entities only.
 
 ---
 
-### 9. Confirmation Action Status
+### 9. Long-Term Statistics
+
+**GET** `/api/history/statistics`
+
+Proxies to Home Assistant long-term statistics API, filtered to exposed entities only. Use this for data analysis on aggregated historical data (means, min/max, sums, state changes).
+
+**Query parameters:**
+- `start_time` (optional): ISO 8601 start time (e.g., `2026-01-01T00:00:00`)
+- `end_time` (optional): ISO 8601 end time
+- `statistic_ids` (optional): Comma-separated entity IDs (e.g., `sensor.temperature,sensor.humidity`)
+- `period` (optional): Aggregation period — `5minute`, `hour` (default), `day`, `week`, or `month`
+
+**Response:**
+```json
+{
+  "sensor.temperature": [
+    {
+      "start": "2026-01-01T00:00:00+00:00",
+      "end": "2026-01-01T01:00:00+00:00",
+      "mean": 21.5,
+      "min": 20.1,
+      "max": 22.8,
+      "last_reset": null,
+      "state": null,
+      "sum": null
+    }
+  ]
+}
+```
+
+**Rate limit:** 10 requests/minute (shared with history endpoint).
+
+**Note:** Only entities that record long-term statistics (`state_class` attribute) will return data.
+
+---
+
+### 10. Confirmation Action Status
 
 **GET** `/api/actions/{action_id}`
 
@@ -181,7 +217,7 @@ Poll status of a confirmation action (for `confirm`-level entities).
 
 ---
 
-### 10. WebSocket
+### 11. WebSocket
 
 **GET** `/api/websocket`
 
@@ -197,7 +233,7 @@ WebSocket endpoint for real-time state changes.
 
 ---
 
-### 11. AI Context (Call This First)
+### 12. AI Context (Call This First)
 
 **GET** `/api/context`
 
@@ -235,7 +271,7 @@ Returns a complete summary of your permissions and capabilities in a single call
 
 ---
 
-### 12. Legacy Endpoints
+### 13. Legacy Endpoints
 
 **GET** `/api/ai-sensors`
 
@@ -458,6 +494,36 @@ if resp.status_code == 200:
             print(f"{change['entity_id']}: {change['state']} at {change['last_changed']}")
 ```
 
+### Querying Long-Term Statistics
+
+```python
+import requests
+from datetime import datetime, timedelta
+
+BASE_URL = "http://localhost:8100"
+HEADERS = {"Authorization": "Bearer cb_xxxx"}
+
+# Statistics for the last 30 days, aggregated by day
+end = datetime.utcnow()
+start = end - timedelta(days=30)
+
+params = {
+    "start_time": start.strftime("%Y-%m-%dT%H:%M:%S"),
+    "end_time": end.strftime("%Y-%m-%dT%H:%M:%S"),
+    "statistic_ids": "sensor.temperature,sensor.humidity",
+    "period": "day",
+}
+
+resp = requests.get(f"{BASE_URL}/api/history/statistics", headers=HEADERS, params=params)
+
+if resp.status_code == 200:
+    statistics = resp.json()
+    for entity_id, data_points in statistics.items():
+        print(f"\n{entity_id}:")
+        for point in data_points:
+            print(f"  {point['start']}: mean={point.get('mean')}, min={point.get('min')}, max={point.get('max')}")
+```
+
 ---
 
 ## Typical Session Flow
@@ -500,6 +566,7 @@ if resp.status_code == 200:
 | POST | `/api/services/{domain}/{service}` | Call service |
 | GET | `/api/constraints` | Parameter constraints |
 | GET | `/api/history/period/{timestamp}` | History (filtered) |
+| GET | `/api/history/statistics` | Long-term statistics (filtered) |
 | GET | `/api/actions/{action_id}` | Poll confirmation status |
 | GET | `/api/websocket` | WebSocket real-time updates |
 | GET | `/api/ai-sensors` | Legacy sensor format |

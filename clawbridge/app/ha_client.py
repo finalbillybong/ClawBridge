@@ -410,6 +410,30 @@ class HAClient:
             logger.warning("Failed to fetch history: %s", e)
         return []
 
+    # ── Long-term statistics ─────────────────────
+
+    async def get_statistics(self, start_time, statistic_ids, end_time=None, period="hour"):
+        """Fetch long-term statistics from HA for specific entities.
+        Returns dict mapping statistic_id to list of aggregated data points.
+        """
+        try:
+            params = {"period": period}
+            if start_time:
+                params["start_time"] = start_time
+            if end_time:
+                params["end_time"] = end_time
+            if statistic_ids:
+                params["statistic_ids"] = ",".join(statistic_ids)
+
+            url = f"{HA_URL}/api/history/statistics"
+            async with self._session.get(url, params=params) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                logger.warning("Failed to fetch statistics: HTTP %d", resp.status)
+        except Exception as e:
+            logger.warning("Failed to fetch statistics: %s", e)
+        return {}
+
     # ── Services ──────────────────────────────────
 
     async def get_services(self):
