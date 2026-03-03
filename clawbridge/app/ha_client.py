@@ -41,6 +41,7 @@ class HAClient:
         self._ws = None
         self._ws_task = None
         self._ws_msg_id = 1
+        self._ws_pending = {}  # msg_id -> Future for request/response commands
         self._state_change_callbacks = []
         self._notification_action_callbacks = []
         self._ws_connected = False
@@ -123,7 +124,25 @@ class HAClient:
                             except json.JSONDecodeError:
                                 continue
 
-                            if data.get("type") == "event":
+                            msg_type = data.get("type")
+
+                            # Resolve pending request/response commands
+                            if msg_type == "result":
+                                msg_id = data.get("id")
+                                future = self._ws_pending.get(msg_id)
+                                if future and not future.done():
+                                    if data.get("success"):
+                                        future.set_result(data.get("result"))
+                                    else:
+                                        error = data.get("error", {})
+                                        logger.warning(
+                                            "WebSocket command %d failed: %s",
+                                            msg_id, error.get("message", "unknown"),
+                                        )
+                                        future.set_result(None)
+                                continue
+
+                            if msg_type == "event":
                                 event = data.get("event", {})
                                 event_type = event.get("event_type", "")
                                 event_data = event.get("data", {})
@@ -167,8 +186,48 @@ class HAClient:
             finally:
                 self._ws_connected = False
                 self._ws = None
+                # Cancel any pending command futures
+                for future in self._ws_pending.values():
+                    if not future.done():
+                        future.set_result(None)
+                self._ws_pending.clear()
 
             await asyncio.sleep(5)
+
+    async def _ws_send_command(self, command, timeout=30):
+        """Send a WebSocket command and wait for the result.
+
+        Args:
+            command: Dict with the command payload (type, plus any params).
+                     The 'id' field will be added automatically.
+            timeout: Seconds to wait for a response.
+
+        Returns:
+            The result payload on success, or None on failure.
+        """
+        if not self._ws_connected or self._ws is None:
+            logger.warning("WebSocket not connected, cannot send command")
+            return None
+
+        msg_id = self._ws_msg_id
+        self._ws_msg_id += 1
+        command["id"] = msg_id
+
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        self._ws_pending[msg_id] = future
+
+        try:
+            await self._ws.send_json(command)
+            return await asyncio.wait_for(future, timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.warning("WebSocket command timed out (id=%d, type=%s)", msg_id, command.get("type"))
+            return None
+        except Exception as e:
+            logger.warning("WebSocket command failed: %s", e)
+            return None
+        finally:
+            self._ws_pending.pop(msg_id, None)
 
     def subscribe_state_changes(self, callback):
         """Register a callback for state changes: async callback(entity_id, new_state, old_state)."""
@@ -414,25 +473,27 @@ class HAClient:
 
     async def get_statistics(self, start_time, statistic_ids, end_time=None, period="hour"):
         """Fetch long-term statistics from HA for specific entities.
+
+        Uses the WebSocket API (recorder/statistics_during_period) since HA
+        does not expose long-term statistics through its REST API.
+
         Returns dict mapping statistic_id to list of aggregated data points.
         """
-        try:
-            params = {"period": period}
-            if start_time:
-                params["start_time"] = start_time
-            if end_time:
-                params["end_time"] = end_time
-            if statistic_ids:
-                params["statistic_ids"] = ",".join(statistic_ids)
+        command = {
+            "type": "recorder/statistics_during_period",
+            "period": period,
+        }
+        if start_time:
+            command["start_time"] = start_time
+        if end_time:
+            command["end_time"] = end_time
+        if statistic_ids:
+            command["statistic_ids"] = statistic_ids
 
-            url = f"{HA_URL}/api/history/statistics"
-            async with self._session.get(url, params=params) as resp:
-                if resp.status == 200:
-                    return await resp.json()
-                logger.warning("Failed to fetch statistics: HTTP %d", resp.status)
-        except Exception as e:
-            logger.warning("Failed to fetch statistics: %s", e)
-        return {}
+        result = await self._ws_send_command(command)
+        if result is None:
+            return {}
+        return result
 
     # ── Services ──────────────────────────────────
 
