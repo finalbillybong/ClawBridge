@@ -597,7 +597,7 @@ async def ha_api_config(request):
     """GET /api/config - HA compatibility: minimal mock config."""
     return web.json_response({
         "components": list(config_mgr.get_control_domains()),
-        "version": "clawbridge-1.5.2",
+        "version": "clawbridge-1.8.0",
         "location_name": "ClawBridge",
     }, headers=CORS_HEADERS)
 
