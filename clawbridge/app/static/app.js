@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════
-   ClawBridge - Frontend Application v1.8.0
+   ClawBridge - Frontend Application v1.7.3
    ═══════════════════════════════════════════════ */
 
 const BASE_PATH = window.location.pathname.replace(/\/$/, '');
