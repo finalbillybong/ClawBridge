@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════
-   ClawBridge - Frontend Application v1.5.1
+   ClawBridge - Frontend Application v1.7.3
    ═══════════════════════════════════════════════ */
 
 const BASE_PATH = window.location.pathname.replace(/\/$/, '');
@@ -12,6 +12,7 @@ let entityConstraints = {};  // { entity_id: { param: { min, max } } }
 let entitySchedules = {};    // { entity_id: schedule_id }
 let allSchedules = {};       // { schedule_id: { name, start, end, days } }
 let entityGroups = {};       // { group_id: { name, entities, icon } }
+let entityAreas = {};        // { area_name: { entities: [...], total, exposed } }
 let activeDomain = null;
 let currentTab = 'dashboard';
 let undoSnapshot = null;
@@ -119,6 +120,7 @@ async function loadEntities() {
     entitySchedules = data.entity_schedules || {};
     allSchedules = data.schedules || {};
     loadGroupsSidebar();
+    loadAreasSidebar();
     renderDomainList();
     updateExposedCount();
     setStatus(true, `${getAllEntitiesFlat().length} entities loaded`);
@@ -201,6 +203,11 @@ function renderEntityList() {
     entities = getExposedEntities();
   } else if (activeDomain === '__all__') {
     entities = getAllEntitiesFlat();
+  } else if (activeDomain && activeDomain.startsWith('area:')) {
+    const areaName = activeDomain.slice(5);
+    const area = entityAreas[areaName];
+    const areaEntityIds = area ? new Set(area.entities || []) : new Set();
+    entities = getAllEntitiesFlat().filter(e => areaEntityIds.has(e.entity_id));
   } else if (activeDomain && activeDomain.startsWith('group:')) {
     const groupId = activeDomain.slice(6);
     const group = entityGroups[groupId];
@@ -363,6 +370,12 @@ function getVisibleEntities() {
     );
   } else if (activeDomain === '__exposed__') { return getExposedEntities(); }
   else if (activeDomain === '__all__') { return getAllEntitiesFlat(); }
+  else if (activeDomain && activeDomain.startsWith('area:')) {
+    const areaName = activeDomain.slice(5);
+    const area = entityAreas[areaName];
+    const ids = area ? new Set(area.entities || []) : new Set();
+    return getAllEntitiesFlat().filter(e => ids.has(e.entity_id));
+  }
   else if (activeDomain && activeDomain.startsWith('group:')) {
     const groupId = activeDomain.slice(6);
     const group = entityGroups[groupId];
@@ -887,6 +900,63 @@ function escapeHtml(str) {
 
 function escapeAttr(str) {
   return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+// ─── Areas ────────────────────────────────────
+
+async function loadAreasSidebar() {
+  try {
+    const data = await apiGet('/api/areas');
+    entityAreas = data.areas || {};
+    renderAreaSidebar();
+  } catch (err) { console.error('Failed to load areas:', err); }
+}
+
+function renderAreaSidebar() {
+  const container = document.getElementById('area-list');
+  const areaNames = Object.keys(entityAreas).sort();
+  if (areaNames.length === 0) { container.innerHTML = ''; return; }
+
+  let html = '<div style="padding:4px 0;border-bottom:1px solid var(--border);margin-bottom:4px;">';
+  html += '<div style="font-size:9px;text-transform:uppercase;color:var(--text-3);padding:4px 12px;letter-spacing:1px;">Areas</div>';
+  areaNames.forEach(name => {
+    const area = entityAreas[name];
+    const total = area.total || 0;
+    const exposed = area.exposed || 0;
+    const isActive = activeDomain === `area:${name}` ? 'active' : '';
+    const toggleTitle = exposed > 0 ? 'Turn off all entities in this area' : 'Expose all entities in this area (read)';
+    html += `<div class="domain-item ${isActive}" onclick="selectArea('${escapeAttr(name)}')" data-domain="area:${name}">
+      <span class="domain-icon">🏠</span><span class="domain-name">${escapeHtml(name)}</span>
+      <span class="area-toggle" onclick="event.stopPropagation();toggleAreaAccess('${escapeAttr(name)}')" title="${toggleTitle}" style="cursor:pointer;margin-left:auto;margin-right:4px;font-size:14px;opacity:${exposed > 0 ? '1' : '0.4'};">${exposed > 0 ? '🟢' : '⚪'}</span>
+      <span class="domain-count">${exposed ? exposed + '/' : ''}${total}</span></div>`;
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function selectArea(areaName) {
+  activeDomain = `area:${areaName}`;
+  document.querySelectorAll('.domain-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.domain === activeDomain);
+  });
+  document.getElementById('status-domain').textContent = `🏠 ${areaName}`;
+  renderEntityList();
+  closeSidebar();
+  if (window.innerWidth <= 768 && currentTab !== 'entities') {
+    switchTab('entities');
+  }
+}
+
+async function toggleAreaAccess(areaName) {
+  const area = entityAreas[areaName];
+  if (!area) return;
+  const exposed = area.exposed || 0;
+  const level = exposed > 0 ? 'off' : 'read';
+  try {
+    const data = await apiPost('/api/areas/access', { area: areaName, access_level: level });
+    showToast(`${level === 'off' ? 'Removed' : 'Exposed'} ${data.changed} entities in "${areaName}".`);
+    await loadEntities();
+  } catch (err) { showToast('Failed to set area access.', true); }
 }
 
 // ─── Entity Groups ────────────────────────────

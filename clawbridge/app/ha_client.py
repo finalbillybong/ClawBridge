@@ -313,6 +313,46 @@ class HAClient:
             pass
         return None
 
+    async def get_entities_by_area(self):
+        """Return a dict of area_name -> [entity_id, ...] for all entities with an area.
+
+        Uses a single HA template call to fetch all entity-area mappings in bulk.
+        """
+        template = (
+            '[{% for state in states %}'
+            '{% set a = area_name(state.entity_id) %}'
+            '{% if a and a != "None" %}'
+            '{"e":"{{ state.entity_id }}","a":"{{ a }}"},'
+            '{% endif %}'
+            '{% endfor %}]'
+        )
+        try:
+            async with self._session.post(
+                f"{HA_URL}/api/template",
+                json={"template": template},
+            ) as resp:
+                if resp.status == 200:
+                    text = await resp.text()
+                    # Remove trailing comma before closing bracket
+                    text = text.strip()
+                    if text.endswith(",]"):
+                        text = text[:-2] + "]"
+                    pairs = json.loads(text)
+                    areas = {}
+                    for pair in pairs:
+                        area = pair["a"]
+                        eid = pair["e"]
+                        if area not in areas:
+                            areas[area] = []
+                        areas[area].append(eid)
+                    # Sort entity lists
+                    for area in areas:
+                        areas[area].sort()
+                    return areas
+        except Exception as e:
+            logger.warning("Failed to load entities by area: %s", e)
+        return {}
+
     # ── State management ──────────────────────────
 
     async def refresh_states(self):

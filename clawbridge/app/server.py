@@ -597,7 +597,7 @@ async def ha_api_config(request):
     """GET /api/config - HA compatibility: minimal mock config."""
     return web.json_response({
         "components": list(config_mgr.get_control_domains()),
-        "version": "clawbridge-1.5.2",
+        "version": "clawbridge-1.7.3",
         "location_name": "ClawBridge",
     }, headers=CORS_HEADERS)
 
@@ -1443,6 +1443,58 @@ async def _handle_notification_action(action_str, event_data):
 
 
 # ──────────────────────────────────────────────
+# Areas (UI/ingress only)
+# ──────────────────────────────────────────────
+
+async def api_get_areas(request):
+    """GET /api/areas - Return all HA areas with their entity IDs."""
+    areas = await ha_client.get_entities_by_area()
+    exposed = config_mgr.exposed_entities
+    # Enrich each area with exposure counts
+    result = {}
+    for area_name, entity_ids in areas.items():
+        exposed_count = sum(1 for eid in entity_ids if eid in exposed)
+        result[area_name] = {
+            "entities": entity_ids,
+            "total": len(entity_ids),
+            "exposed": exposed_count,
+        }
+    return web.json_response({"areas": result})
+
+
+async def api_set_area_access(request):
+    """POST /api/areas/access - Bulk set access level for all entities in an area."""
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+    area_name = data.get("area", "").strip()
+    level = data.get("access_level", "")
+    if not area_name:
+        return web.json_response({"error": "Area name required"}, status=400)
+    if level not in ("read", "confirm", "control", "off"):
+        return web.json_response({"error": "Invalid access level"}, status=400)
+
+    areas = await ha_client.get_entities_by_area()
+    entity_ids = areas.get(area_name, [])
+    if not entity_ids:
+        return web.json_response({"error": "Area not found or has no entities"}, status=404)
+
+    exposed = config_mgr.exposed_entities
+    count = 0
+    for eid in entity_ids:
+        if level == "off":
+            if eid in exposed:
+                del exposed[eid]
+                count += 1
+        else:
+            exposed[eid] = level
+            count += 1
+    config_mgr.exposed_entities = exposed
+    return web.json_response({"status": "ok", "changed": count})
+
+
+# ──────────────────────────────────────────────
 # Entity Groups (UI/ingress only)
 # ──────────────────────────────────────────────
 
@@ -1586,6 +1638,10 @@ def create_ingress_app():
     app.router.add_get("/api/audit/logs", api_get_audit_logs)
     app.router.add_delete("/api/audit/logs", api_clear_audit_logs)
     app.router.add_get("/api/stats", api_get_stats)
+
+    # Areas
+    app.router.add_get("/api/areas", api_get_areas)
+    app.router.add_post("/api/areas/access", api_set_area_access)
 
     # Entity Groups
     app.router.add_get("/api/groups", api_list_groups)
