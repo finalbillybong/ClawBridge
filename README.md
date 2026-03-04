@@ -30,6 +30,7 @@ Without ClawBridge, AI agents (via ha-mcp, custom skills, or direct API access) 
 | Rate limiting | No | **Per-IP and per-key** |
 | Entity annotations | No | **Descriptions visible to AI** for context |
 | Entity groups | No | **Bulk access control** by room/function |
+| Area-based exposure | No | **Single toggle** to expose all entities in an HA area |
 
 ## Installation
 
@@ -103,6 +104,7 @@ If you're currently using ha-mcp to give OpenClaw access to Home Assistant:
 - **Time-based access schedules** — restrict when AI can control entities (e.g., 6am-11pm only)
 - **Human-in-the-loop confirmation** — confirm-level entities trigger Approve/Deny push notifications (iOS + Android)
 - **Entity groups** — organise entities by room/function for bulk access control
+- **Area-based exposure** — single toggle to expose all entities in a Home Assistant area
 - **Usage dashboard** with hourly charts, top entities, and action counts
 - **Audit logging** — all AI service calls logged with full action history
 - **Rate limiting** — per-IP and per-key

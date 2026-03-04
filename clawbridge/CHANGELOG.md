@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.7.3 - Area-Based Entity Exposure
+
+- **Feature**: Expose all entities in a Home Assistant area with a single toggle in the sidebar
+  - Areas section appears between Groups and Domains in the sidebar
+  - Toggle indicator (green/white) shows whether any entities in the area are exposed
+  - Click toggle to expose all entities (read) or remove all at once
+  - Click area name to browse and fine-tune individual entity access levels
+- **Backend**: New `GET /api/areas` and `POST /api/areas/access` ingress endpoints
+- **Backend**: Bulk entity-to-area mapping via single HA template call (`get_entities_by_area`)
+
+## 1.7.2 - Documentation Update
+
+- **Docs**: Improved README with comparison table vs HA MCP / ha-mcp
+- **Docs**: Better quick start guide for new users
+
+## 1.7.1 - Long-Term Statistics & Cleanup
+
+- **Feature**: New `GET /api/history/statistics` endpoint for long-term statistics (aggregated means, min/max, sums)
+  - Supports `5minute`, `hour`, `day`, `week`, `month` aggregation periods
+  - Filtered to exposed entities only
+- **Fix**: Statistics endpoint uses WebSocket instead of REST API for reliability
+- **Cleanup**: Removed unused `websockets` dependency from Dockerfile
+
 ## 1.7.0 - Remove Chat Feature
 
 - **Removed**: Chat tab and all AI Gateway proxy functionality — ClawBridge now focuses exclusively on exposing HA entities to OpenClaw with access control

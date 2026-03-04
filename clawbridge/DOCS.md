@@ -1,4 +1,4 @@
-# ClawBridge Documentation (v1.4.0)
+# ClawBridge Documentation (v1.7.3)
 
 ClawBridge provides an **AI guard rail** between AI agents (OpenClaw, etc.) and Home Assistant. Users maintain explicit control over which entities are exposed for reading and/or control, with granular access levels, human-in-the-loop confirmation, and multi-agent security.
 
@@ -210,6 +210,7 @@ The notification message uses the **AI name** (configurable in Settings, e.g., "
 | **Parameter constraints** | Min/max limits, auto-clamping, smart filtering by entity capabilities |
 | **Time-based schedules** | Restrict control to allowed hours |
 | **Read-only domain filtering** | sensor, binary_sensor, weather, etc. limited to off/read only |
+| **Area-based exposure** | Single toggle to expose all entities in a Home Assistant area |
 
 ---
 
@@ -219,34 +220,15 @@ ClawBridge includes both a dark (default) and light theme. Toggle between them u
 
 ---
 
-## AI Chat
+## Area-Based Exposure
 
-The Chat tab lets you talk directly to your AI from inside ClawBridge. It works by proxying messages to your OpenClaw Gateway (or any OpenAI-compatible `/v1/chat/completions` endpoint).
+ClawBridge can pull your Home Assistant area assignments and display them in the sidebar. Each area shows a toggle to expose or hide all entities in that area at once.
 
-### Setup
+- **Toggle on**: Sets all entities in the area to `read` access
+- **Toggle off**: Removes all entities in the area from exposure
+- **Click the area name** to browse its entities and fine-tune individual access levels (read/confirm/control)
 
-1. Go to **Settings → Chat / AI Gateway**
-2. Enter your Gateway URL (e.g., `http://192.168.1.50:8080`)
-3. Enter a Bearer token if required
-4. Click **Test** to verify connectivity
-5. Open the **Chat** tab and start a conversation
-
-### How It Works
-
-- Messages are sent via `POST /api/chat` on the ingress port (8099, authenticated)
-- ClawBridge streams the Gateway response as SSE events back to the browser
-- Chat history is saved server-side (capped at 200 messages) and persists across sessions
-- Use the **New** button to clear history and start a fresh conversation
-
-### Chat Endpoints (Ingress Port Only)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/chat` | Send message, stream SSE response from gateway |
-| `GET` | `/api/chat/history` | Get saved chat history |
-| `POST` | `/api/chat/history` | Save chat history |
-| `DELETE` | `/api/chat/history` | Clear chat history |
-| `GET` | `/api/chat/status` | Check if gateway is configured |
+Areas are fetched from Home Assistant in real-time, so new devices added to an area will appear automatically.
 
 ---
 
@@ -265,8 +247,6 @@ The Chat tab lets you talk directly to your AI from inside ClawBridge. It works 
 | AI Name | Name shown in confirmation notifications (e.g., "OpenClaw") | AI |
 | Confirm Timeout | Seconds before pending confirm actions expire | 300 |
 | Sensitive Domains | Domains requiring explicit control confirmation | lock, cover, alarm_control_panel, climate, valve |
-| Gateway URL | OpenClaw Gateway URL for chat proxy | Empty |
-| Gateway Token | Bearer token for gateway auth | Empty |
 
 ---
 
@@ -286,7 +266,5 @@ The Chat tab lets you talk directly to your AI from inside ClawBridge. It works 
 5. Add entity annotations and parameter constraints as needed
 6. **Security tab**: Configure API keys, schedules, and view pending approvals
 7. **Settings tab**: Configure refresh, rate limits, IP allowlist, audit logging
-8. **Settings → Chat / AI Gateway**: Enter Gateway URL and token to enable the Chat tab
-9. **Chat tab**: Talk to your AI directly from ClawBridge
-10. Share the AI endpoint URL: `http://<your-ha-ip>:8100/api/`
-11. For WebSocket: `ws://<your-ha-ip>:8100/api/websocket`
+8. Share the AI endpoint URL: `http://<your-ha-ip>:8100/api/`
+9. For WebSocket: `ws://<your-ha-ip>:8100/api/websocket`
