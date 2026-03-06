@@ -19,6 +19,8 @@ Without ClawBridge, AI agents (via ha-mcp, custom skills, or direct API access) 
 
 ### ClawBridge vs HA MCP / ha-mcp
 
+These projects have **different goals**. [HA MCP](https://github.com/home-assistant/home-assistant-mcp) gives your AI agent tools to access *all* aspects of your Home Assistant — entities, services, automations, dashboards, and more. It is designed to maximise what the AI can do. ClawBridge takes the opposite approach: it sits between your AI and Home Assistant to **restrict** what the agent can see and control, with per-entity permissions, human approval flows, and audit logging. Use HA MCP when you want broad AI capability; use ClawBridge when you want tight control over what the AI is allowed to touch.
+
 | Feature | HA MCP / ha-mcp | ClawBridge |
 |---------|----------------|------------|
 | Entity filtering | On/off per entity | **Four-state**: off / read / confirm / control |
